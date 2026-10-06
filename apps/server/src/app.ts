@@ -29,6 +29,8 @@ export type AppOptions = {
   loginRateLimit?: number;
   /** Defaults to true in production. Secure cookies need HTTPS. */
   secureCookies?: boolean;
+  /** Dashboard origins allowed to PUT to local storage links (development only). */
+  uploadOrigins?: string[];
 };
 
 const API_PREFIXES = ["/trpc", "/auth", "/mcp", "/health", LOCAL_STORAGE_PATH];
@@ -42,6 +44,7 @@ export function createApp({
   mcpRateLimit,
   loginRateLimit,
   secureCookies = process.env.NODE_ENV === "production",
+  uploadOrigins = [],
 }: AppOptions): Express {
   const app = express();
   app.disable("x-powered-by");
@@ -58,7 +61,7 @@ export function createApp({
 
   app.use(authRouter({ db, now, secureCookies, loginRateLimit }));
   app.use(mcpRouter({ db, storage, version, now, rateLimit: mcpRateLimit }));
-  if (storage instanceof LocalDiskStorage) app.use(devStorageRouter(storage));
+  if (storage instanceof LocalDiskStorage) app.use(devStorageRouter(storage, uploadOrigins));
 
   app.use(
     "/trpc",

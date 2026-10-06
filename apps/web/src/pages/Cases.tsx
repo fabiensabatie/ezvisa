@@ -1,7 +1,10 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useState } from "react";
+import { Button } from "../components/controls";
+import { NewCaseDialog } from "../components/NewCaseDialog";
 import { Avatar, Chip, PageHeader, Progress, QueryView } from "../components/ui";
+import { useCan } from "../lib/can";
 import { bangkokToday, daysUntil, plural, shortDate } from "../lib/format";
 import { DOT, dueTone, STAGES } from "../lib/tones";
 import { type Outputs, useTRPC } from "../trpc";
@@ -57,6 +60,8 @@ function CaseCard({ c }: { c: CaseSummary }) {
 export function CasesPage() {
   const trpc = useTRPC();
   const [showDone, setShowDone] = useState(true);
+  const [opening, setOpening] = useState(false);
+  const { can } = useCan();
   const list = useQuery(trpc.cases.list.queryOptions({ includeClosed: showDone, limit: 100 }));
 
   const monthAgo = Date.now() - 30 * 86_400_000;
@@ -79,7 +84,13 @@ export function CasesPage() {
           />
           Show cases closed in the last 30 days
         </label>
+        {can("cases", "edit") && (
+          <Button icon="plus" onClick={() => setOpening(true)}>
+            New case
+          </Button>
+        )}
       </PageHeader>
+      <NewCaseDialog open={opening} onClose={() => setOpening(false)} />
       <QueryView query={list} what="cases">
         {() => (
           <div className="-mx-4 flex items-start gap-3.5 overflow-x-auto px-4 pb-3 sm:mx-0 sm:px-0">

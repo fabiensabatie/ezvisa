@@ -37,5 +37,19 @@ export default defineRailway(() => {
     },
   });
 
-  return project("ezvisa", { resources: [db, documents, backup, server] });
+  // A cron service: Railway starts it on schedule, it runs once and exits. Schedules are in
+  // UTC, so 01:00 is 08:00 in Bangkok. It schedules reminders and marks today's as due.
+  const jobs = service("jobs", {
+    source: github("fabiensabatie/ezvisa", { branch: "main" }),
+    build: "pnpm turbo run build --filter=@ezvisa/core...",
+    start: "node packages/core/dist/scripts/daily.js",
+    replicas: { [SINGAPORE]: 1 },
+    deploy: { cronSchedule: "0 1 * * *", restartPolicyType: "NEVER" },
+    env: {
+      NODE_ENV: "production",
+      DATABASE_URL: db.env.DATABASE_URL,
+    },
+  });
+
+  return project("ezvisa", { resources: [db, documents, backup, server, jobs] });
 });

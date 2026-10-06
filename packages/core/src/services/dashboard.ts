@@ -101,6 +101,48 @@ async function describeActivity(ctx: Context, entries: AuditLog[]): Promise<Desc
       case "reminder.sent":
         text = `sent a reminder on ${String(after(e).channel ?? "").toLowerCase()}`;
         break;
+      case "reminder.skipped":
+        text = "skipped a reminder";
+        break;
+      case "reminder_rule.updated":
+        text = "changed the reminder schedule";
+        break;
+      case "case.updated":
+        text = `updated ${caseLabel}`;
+        break;
+      case "client.deleted":
+        text = "deleted a client";
+        break;
+      case "document.deleted":
+        text = "removed a document";
+        break;
+      case "template.updated":
+      case "template.item_added":
+      case "template.item_updated":
+      case "template.item_removed":
+      case "template.items_reordered":
+      case "template.file_attached":
+      case "template.file_removed":
+        text = `edited the ${template?.name ?? "a"} template draft`;
+        break;
+      case "template.draft_discarded":
+        text = `discarded the ${template?.name ?? "a"} template draft`;
+        break;
+      case "template.archived":
+        text = `archived the ${template?.name ?? "a"} template`;
+        break;
+      case "settings.updated":
+        text = "changed the agency settings";
+        break;
+      case "token.created":
+        text = `created an access token for ${String(after(e).employee ?? "someone")}`;
+        break;
+      case "token.revoked":
+        text = "revoked an access token";
+        break;
+      case "employee.created":
+        text = `added ${String(after(e).name ?? "someone")} to the team`;
+        break;
       default:
         text = e.action.replace(/[._]/g, " ");
     }

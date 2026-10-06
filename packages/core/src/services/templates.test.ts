@@ -14,7 +14,10 @@ import { createClient } from "./clients.js";
 import {
   addTemplateItem,
   attachTemplateFile,
+  confirmTemplateFileUpload,
   createTemplate,
+  createTemplateFileUpload,
+  discardTemplateDraft,
   getTemplate,
   publishTemplateVersion,
   removeTemplateFile,
@@ -134,5 +137,69 @@ describe.skipIf(!url)("templates service", () => {
     });
     expect(draft3.draft?.files).toHaveLength(0);
     expect(storage.objects.size).toBe(1);
+  });
+
+  it("attaches a form uploaded through a presigned link, once", async () => {
+    await publishSampleTemplate(owner);
+    const items = (await getTemplate(owner, { template: "retirement-extension" })).selected.items;
+    const upload = await createTemplateFileUpload(owner, {
+      template: "retirement-extension",
+      filename: "TM 7 (2026).pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 13,
+    });
+    expect(upload.uploadKey).toMatch(/^templates\/[0-9a-f-]{36}\/[0-9a-f-]{36}\/TM_7_2026_\.pdf$/);
+    const confirm = {
+      template: "retirement-extension",
+      uploadKey: upload.uploadKey,
+      name: "TM.7 application",
+      kind: "PDF_FORM" as const,
+      mimeType: "application/pdf",
+      itemId: items[0]?.id,
+    };
+    await expect(confirmTemplateFileUpload(owner, confirm)).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
+
+    await storage.put(upload.uploadKey, Buffer.from("%PDF-1.7 test"), "application/pdf");
+    const draft = await confirmTemplateFileUpload(owner, confirm);
+    const file = draft.draft?.files[0];
+    expect(file).toMatchObject({ name: "TM.7 application", sizeBytes: 13 });
+    expect(draft.draft?.items[0]?.formFileId).toBe(file?.id);
+    await expect(confirmTemplateFileUpload(owner, confirm)).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+
+    await expect(
+      confirmTemplateFileUpload(owner, {
+        ...confirm,
+        uploadKey: upload.uploadKey.replace(/^templates\/[0-9a-f-]{36}/, `templates/${file?.id}`),
+      }),
+    ).rejects.toMatchObject({ code: "VALIDATION" });
+  });
+
+  it("discards a draft, keeping the published version and its files", async () => {
+    await publishSampleTemplate(owner);
+    await attachTemplateFile(owner, {
+      template: "retirement-extension",
+      name: "Letter",
+      kind: "LETTER",
+      filename: "letter.pdf",
+      mimeType: "application/pdf",
+      contentBase64: Buffer.from("%PDF-1.7 letter").toString("base64"),
+    });
+    expect(storage.objects.size).toBe(1);
+
+    const after = await discardTemplateDraft(owner, { template: "retirement-extension" });
+    expect(after).toMatchObject({ publishedVersion: 1, draftVersion: null });
+    expect(storage.objects.size).toBe(0);
+    await expect(
+      discardTemplateDraft(owner, { template: "retirement-extension" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    await createTemplate(owner, { slug: "tm30", name: "TM.30", items: [{ label: "Passport" }] });
+    await expect(discardTemplateDraft(owner, { template: "tm30" })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
   });
 });

@@ -23,7 +23,8 @@
     "token:create": "tsx --conditions=@ezvisa/source src/scripts/token-create.ts",
     "token:list": "tsx --conditions=@ezvisa/source src/scripts/token-list.ts",
     "token:revoke": "tsx --conditions=@ezvisa/source src/scripts/token-revoke.ts",
-    "sample": "tsx --conditions=@ezvisa/source src/scripts/sample.ts"
+    "sample": "tsx --conditions=@ezvisa/source src/scripts/sample.ts",
+    "job:daily": "tsx --conditions=@ezvisa/source src/scripts/daily.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",

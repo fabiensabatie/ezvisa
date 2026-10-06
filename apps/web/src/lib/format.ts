@@ -20,6 +20,11 @@ export function formatDate(date: string | null | undefined): string {
   return `${d} ${MONTHS[m - 1]} ${y}`;
 }
 
+/** A timestamp's date in Bangkok, e.g. "14 Oct 2026". Never slice an ISO string for this. */
+export function formatInstant(iso: string | null | undefined): string {
+  return iso ? formatDate(bangkokToday(new Date(iso))) : "Not set";
+}
+
 /** "14 Oct" */
 export function shortDate(date: string): string {
   const [, m, d] = parts(date);
@@ -89,7 +94,7 @@ export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`;
 }
 
-const COUNTRIES: Record<string, string> = {
+export const COUNTRIES: Record<string, string> = {
   AU: "Australia",
   BR: "Brazil",
   CA: "Canada",

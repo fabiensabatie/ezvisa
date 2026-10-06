@@ -17,7 +17,15 @@ The dashboard mockup is a clickable design canvas: [EzVisa Dashboard Mockup](htt
 
 ## Status
 
-M0 (scaffold), M1 (data, tokens and MCP) and M2 (dashboard, read side) are built. The MCP server exposes 51 tools over clients, cases, documents, templates, reminders and the team, each token seeing only what its role allows. The dashboard signs in with the same tokens and shows the overview, case board, case and client pages, reminders, team, templates and settings on live data. Next is M3: checklist updates, stage moves, uploads and the other write actions in the dashboard.
+M0 to M3 are built and tested locally. The MCP server exposes 51 tools over clients, cases, documents, templates, reminders and the team, each token seeing only what its role allows. The dashboard signs in with the same tokens and runs the work end to end:
+- adding clients and opening cases
+- updating the checklist and moving stages, with the guards explained
+- uploading documents and template forms straight to storage
+- sending reminders
+- editing and publishing templates
+- managing the team, access tokens and the agency colour
+
+A daily job schedules the reminders. What remains before Namtarn uses it for real is the Railway setup (M0's deployment step).
 
 ## Repository
 
@@ -96,6 +104,7 @@ Unit tests always run. Integration tests run against `TEST_DATABASE_URL` and are
 | `pnpm db:migrate` | Create a migration after editing `schema.prisma` |
 | `pnpm db:studio` | Browse the database |
 | `pnpm token:create --employee <email> --label "<label>"` | New access token, printed once |
-| `pnpm token:list` / `pnpm token:revoke --id <id>` | Manage tokens |
+| `pnpm token:list` / `pnpm token:revoke --id <id>` | Manage tokens (the owner can also do this in Settings) |
+| `pnpm job:daily` | The daily reminder job, as Railway runs it at 08:00 Bangkok time |
 
 Deployment and infrastructure changes are described in [.railway/README.md](.railway/README.md).

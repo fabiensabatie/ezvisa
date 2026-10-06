@@ -219,8 +219,15 @@ export function caseSummaryDto(c: CaseWithRelations) {
 export type CaseSummaryDto = ReturnType<typeof caseSummaryDto>;
 
 export function caseDetailDto(c: CaseWithRelations & { documents: Document[] }) {
+  const summary = caseSummaryDto(c);
   return {
-    ...caseSummaryDto(c),
+    ...summary,
+    client: {
+      ...summary.client,
+      channel: c.client.channel,
+      /** Documents can be stored only once the client accepted the privacy notice. */
+      consentGiven: c.client.consentAt !== null,
+    },
     notes: c.notes,
     knownFailures: c.templateVersion.knownFailures,
     items: [...c.items].sort((a, b) => a.position - b.position).map(caseItemDto),

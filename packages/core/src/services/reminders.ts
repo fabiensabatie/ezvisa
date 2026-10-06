@@ -29,6 +29,10 @@ export const listRemindersInput = z.object({
     .max(365)
     .default(30)
     .describe("Reminders due to go out within this many days"),
+  includeSentToday: z
+    .boolean()
+    .default(false)
+    .describe("Also return reminders marked sent today, when no status is given"),
 });
 export const markReminderSentInput = z.object({
   reminderId: id("Reminder"),
@@ -233,12 +237,17 @@ export async function listReminders(ctx: Context, raw: z.input<typeof listRemind
   const today = bangkokToday(ctx.now());
   await ctx.db.$transaction((tx) => syncReminders(tx, today));
 
+  const pending: Prisma.ReminderWhereInput = {
+    status: { in: ["DUE", "SCHEDULED"] },
+    sendOn: { lte: parseDateOnly(addDays(today, input.withinDays)) },
+  };
+  // Midnight in Bangkok, as an instant: 17:00 UTC the day before.
+  const startOfToday = new Date(`${today}T00:00:00+07:00`);
   const where: Prisma.ReminderWhereInput = input.status
     ? { status: input.status }
-    : {
-        status: { in: ["DUE", "SCHEDULED"] },
-        sendOn: { lte: parseDateOnly(addDays(today, input.withinDays)) },
-      };
+    : input.includeSentToday
+      ? { OR: [pending, { status: "SENT", sentAt: { gte: startOfToday } }] }
+      : pending;
   const rows = await ctx.db.reminder.findMany({
     where,
     include: { client: true },

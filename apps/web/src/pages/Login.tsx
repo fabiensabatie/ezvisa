@@ -115,8 +115,8 @@ function LoginForm() {
         <div className="mt-6 flex items-start gap-3 rounded-2xl bg-soft px-4 py-3.5 text-ink">
           <Icon name="key" className="mt-0.5" />
           <p className="text-sm leading-relaxed text-text-soft">
-            Tokens are issued by the owner. The same token signs you in here and authorises the MCP
-            server, so keep it private.
+            Tokens are issued by the owner from Settings. The same token signs you in here and
+            authorises the MCP server, so keep it private.
           </p>
         </div>
       </div>

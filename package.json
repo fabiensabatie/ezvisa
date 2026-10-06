@@ -22,6 +22,7 @@
     "token:create": "pnpm --filter @ezvisa/core token:create",
     "token:list": "pnpm --filter @ezvisa/core token:list",
     "token:revoke": "pnpm --filter @ezvisa/core token:revoke",
+    "job:daily": "pnpm --filter @ezvisa/core job:daily",
     "infra:plan": "railway config plan"
   },
   "devDependencies": {

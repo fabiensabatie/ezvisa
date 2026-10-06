@@ -4,6 +4,8 @@ import { Link, Navigate, Outlet, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { Flower } from "../components/Flower";
 import { Icon, type IconName } from "../components/Icon";
+import { Toaster } from "../components/Toaster";
+import { Avatar } from "../components/ui";
 import { signOut } from "../session";
 import { ThemeProvider, useTheme } from "../theme";
 import { type Outputs, useTRPC } from "../trpc";
@@ -122,9 +124,7 @@ function UserCard({ me }: { me: Me }) {
   const queryClient = useQueryClient();
   return (
     <div className="flex items-center gap-2.5 rounded-2xl border border-line bg-white p-2.5">
-      <span className="grid size-10 shrink-0 place-items-center rounded-full bg-soft-2 text-sm font-extrabold text-ink">
-        {me.name.slice(0, 2).toUpperCase()}
-      </span>
+      <Avatar name={me.name} id={me.employeeId} />
       <div className="min-w-0 flex-1">
         <div className="truncate text-sm font-extrabold">{me.name}</div>
         <div className="truncate text-xs text-muted">{me.role}</div>
@@ -198,9 +198,10 @@ function Shell({ me }: { me: Me }) {
         </div>
       )}
 
-      <main className="min-w-0 px-4 py-6 sm:px-8 lg:px-10 lg:py-8">
+      <main className="min-w-0 px-4 py-6 pb-24 sm:px-8 lg:px-10 lg:py-8 lg:pb-24">
         <Outlet />
       </main>
+      <Toaster />
     </div>
   );
 }

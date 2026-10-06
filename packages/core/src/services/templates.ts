@@ -6,7 +6,9 @@ import { type Context, requireLevel, requireStorage, type Tx } from "../context.
 import { templateSummaryDto, templateVersionDto } from "../dto.js";
 import { DomainError } from "../errors.js";
 import { id, notFound, templateRef, templateWhere } from "../refs.js";
-import { decodeBase64File, safeFilename } from "./files.js";
+import { assertMimeType, decodeBase64File, MAX_UPLOAD_BYTES, safeFilename } from "./files.js";
+
+const UPLOAD_URL_SECONDS = 10 * 60;
 
 const itemKind = z.enum(["DOCUMENT", "FORM", "PAYMENT", "OTHER"]);
 const fileKind = z.enum(["PDF_FORM", "LETTER", "REFERENCE"]);
@@ -93,6 +95,20 @@ export const attachTemplateFileInput = z.object({
   contentBase64: z.string().min(1).describe("File content, base64, up to 10 MB"),
   itemId: id("Template item").optional().describe("Link this file as the form for an item"),
 });
+export const createTemplateFileUploadInput = z.object({
+  template: templateRef,
+  filename: z.string().trim().min(1).max(200),
+  mimeType: z.string().trim().min(1),
+  sizeBytes: z.number().int().min(1).max(MAX_UPLOAD_BYTES).describe("Up to 20 MB"),
+});
+export const confirmTemplateFileUploadInput = z.object({
+  template: templateRef,
+  uploadKey: z.string().min(1).describe("uploadKey returned by createTemplateFileUpload"),
+  name: attachTemplateFileInput.shape.name,
+  kind: fileKind,
+  mimeType: z.string().trim().min(1),
+  itemId: attachTemplateFileInput.shape.itemId,
+});
 export const removeTemplateFileInput = z.object({
   template: templateRef,
   fileId: id("Template file"),
@@ -102,6 +118,7 @@ export const publishTemplateVersionInput = z.object({
   notes: z.string().trim().max(2000).optional().describe("What changed in this version"),
 });
 export const archiveTemplateInput = z.object({ template: templateRef });
+export const discardTemplateDraftInput = z.object({ template: templateRef });
 
 const versionInclude = {
   items: { orderBy: { position: "asc" } },
@@ -461,35 +478,115 @@ export async function attachTemplateFile(
   const key = `templates/${template.id}/${randomUUID()}/${safeFilename(input.filename)}`;
   await storage.put(key, file.bytes, input.mimeType);
 
+  return recordTemplateFile(ctx, template.id, {
+    name: input.name,
+    kind: input.kind,
+    storageKey: key,
+    mimeType: input.mimeType,
+    sizeBytes: file.bytes.byteLength,
+    itemId: input.itemId,
+  });
+}
+
+/** Adds a stored object to the draft as a file, optionally as the form for an item. */
+function recordTemplateFile(
+  ctx: Context,
+  templateId: string,
+  file: {
+    name: string;
+    kind: z.infer<typeof fileKind>;
+    storageKey: string;
+    mimeType: string;
+    sizeBytes: number;
+    itemId?: string | undefined;
+  },
+) {
   return ctx.db.$transaction(async (tx) => {
-    const fresh = await loadTemplate(tx, template.id);
+    const fresh = await loadTemplate(tx, templateId);
     const { draft, itemIds } = await ensureDraft(tx, ctx, fresh);
     const created = await tx.templateFile.create({
       data: {
         versionId: draft.id,
-        name: input.name,
-        kind: input.kind,
-        storageKey: key,
-        mimeType: input.mimeType,
-        sizeBytes: file.bytes.byteLength,
+        name: file.name,
+        kind: file.kind,
+        storageKey: file.storageKey,
+        mimeType: file.mimeType,
+        sizeBytes: file.sizeBytes,
       },
     });
-    if (input.itemId) {
-      const item = draftItem(draft, itemIds, input.itemId);
+    if (file.itemId) {
+      const item = draftItem(draft, itemIds, file.itemId);
       await tx.templateItem.update({ where: { id: item.id }, data: { formFileId: created.id } });
     }
     await audit(tx, ctx, {
       action: "template.file_attached",
       entity: "Template",
-      entityId: template.id,
+      entityId: templateId,
       after: {
         fileId: created.id,
-        name: input.name,
-        kind: input.kind,
+        name: file.name,
+        kind: file.kind,
         sizeBytes: created.sizeBytes,
       },
     });
-    return draftResult(tx, template.id);
+    return draftResult(tx, templateId);
+  });
+}
+
+/** A presigned PUT link for a form or letter. Confirm with confirmTemplateFileUpload. */
+export async function createTemplateFileUpload(
+  ctx: Context,
+  raw: z.input<typeof createTemplateFileUploadInput>,
+) {
+  requireLevel(ctx, "templates", "edit");
+  const input = createTemplateFileUploadInput.parse(raw);
+  assertMimeType(input.mimeType);
+  const storage = requireStorage(ctx);
+  const template = await loadTemplate(ctx.db, input.template);
+  if (template.archivedAt) {
+    throw new DomainError("CONFLICT", `Template ${template.slug} is archived.`);
+  }
+  const uploadKey = `templates/${template.id}/${randomUUID()}/${safeFilename(input.filename)}`;
+  return {
+    uploadKey,
+    uploadUrl: await storage.uploadUrl(uploadKey, input.mimeType, UPLOAD_URL_SECONDS),
+    method: "PUT" as const,
+    headers: { "Content-Type": input.mimeType },
+    expiresInSeconds: UPLOAD_URL_SECONDS,
+  };
+}
+
+export async function confirmTemplateFileUpload(
+  ctx: Context,
+  raw: z.input<typeof confirmTemplateFileUploadInput>,
+) {
+  requireLevel(ctx, "templates", "edit");
+  const input = confirmTemplateFileUploadInput.parse(raw);
+  assertMimeType(input.mimeType);
+  const storage = requireStorage(ctx);
+  const template = await loadTemplate(ctx.db, input.template);
+  const match = /^templates\/([0-9a-f-]{36})\/[0-9a-f-]{36}\/[^/]+$/.exec(input.uploadKey);
+  if (!match || match[1] !== template.id) {
+    throw new DomainError("VALIDATION", "uploadKey does not belong to this template.");
+  }
+  if (await ctx.db.templateFile.findFirst({ where: { storageKey: input.uploadKey } })) {
+    throw new DomainError("CONFLICT", "This upload was already attached.");
+  }
+  const size = await storage.size(input.uploadKey);
+  if (size === null) {
+    throw new DomainError("NOT_FOUND", "Nothing was uploaded to that uploadKey yet.");
+  }
+  if (size > MAX_UPLOAD_BYTES) {
+    await storage.delete(input.uploadKey);
+    throw new DomainError("VALIDATION", "The uploaded file is over 20 MB and was discarded.");
+  }
+  return recordTemplateFile(ctx, template.id, {
+    name: input.name,
+    kind: input.kind,
+    storageKey: input.uploadKey,
+    mimeType: input.mimeType,
+    sizeBytes: size,
+    itemId: input.itemId,
   });
 }
 
@@ -565,6 +662,46 @@ export async function publishTemplateVersion(
       published: published ? templateVersionDto(published) : null,
     };
   });
+}
+
+/** Throws the draft away. The published version stays current. */
+export async function discardTemplateDraft(
+  ctx: Context,
+  raw: z.input<typeof discardTemplateDraftInput>,
+) {
+  requireLevel(ctx, "templates", "edit");
+  const { template: ref } = discardTemplateDraftInput.parse(raw);
+  const result = await ctx.db.$transaction(async (tx) => {
+    const template = await loadTemplate(tx, ref);
+    const draft = template.versions.find((v) => v.status === "DRAFT");
+    if (!draft) throw new DomainError("CONFLICT", `${template.name} has no draft.`);
+    if (template.versions.length === 1) {
+      throw new DomainError(
+        "CONFLICT",
+        `${template.name} has never been published, so the draft is all there is. Archive the template instead.`,
+      );
+    }
+    await tx.templateItem.deleteMany({ where: { versionId: draft.id } });
+    await tx.templateFile.deleteMany({ where: { versionId: draft.id } });
+    await tx.templateVersion.delete({ where: { id: draft.id } });
+    const keys = draft.files.map((f) => f.storageKey);
+    const kept = await tx.templateFile.findMany({
+      where: { storageKey: { in: keys } },
+      select: { storageKey: true },
+    });
+    await audit(tx, ctx, {
+      action: "template.draft_discarded",
+      entity: "Template",
+      entityId: template.id,
+      before: { version: draft.version },
+    });
+    return {
+      dto: templateSummaryDto(await loadTemplate(tx, template.id)),
+      orphanKeys: keys.filter((k) => !kept.some((f) => f.storageKey === k)),
+    };
+  });
+  for (const key of result.orphanKeys) await ctx.storage?.delete(key).catch(() => {});
+  return result.dto;
 }
 
 export async function archiveTemplate(ctx: Context, raw: z.input<typeof archiveTemplateInput>) {

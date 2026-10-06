@@ -1,7 +1,14 @@
 import { createDb, type Db } from "@ezvisa/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Context } from "../context.js";
-import { createTestActor, createTestContext, resetDatabase, testDatabaseUrl } from "../testing.js";
+import { runDailyJob } from "../jobs.js";
+import {
+  createTestActor,
+  createTestContext,
+  resetDatabase,
+  TEST_NOW,
+  testDatabaseUrl,
+} from "../testing.js";
 import { createClient, updateClient } from "./clients.js";
 import {
   listDeadlines,
@@ -94,6 +101,11 @@ describe.skipIf(!url)("reminders service", () => {
     await expect(markReminderSent(owner, { reminderId: first?.id ?? "" })).rejects.toMatchObject({
       code: "CONFLICT",
     });
+    // The dashboard keeps today's sent reminders on screen; the default list drops them.
+    const ids = async (input: { includeSentToday?: boolean }) =>
+      (await listReminders(owner, { withinDays: 30, ...input })).items.map((r) => r.id);
+    expect(await ids({ includeSentToday: true })).toContain(sent.id);
+    expect(await ids({})).not.toContain(sent.id);
     if (second) {
       expect((await skipReminder(owner, { reminderId: second.id, note: "Replied" })).status).toBe(
         "SKIPPED",
@@ -114,5 +126,19 @@ describe.skipIf(!url)("reminders service", () => {
         openCase: null,
       }),
     ]);
+  });
+
+  it("runs the daily job idempotently", async () => {
+    // Stay ends in 7 days: the 7-day reminder is due today, so no catch-up is added.
+    const tom = await createClient(owner, {
+      fullName: "Tom Richards",
+      nationality: "AU",
+      stayUntil: "2026-10-08",
+    });
+    const result = await runDailyJob(db, TEST_NOW);
+    expect(result).toEqual({ today: "2026-10-01", remindersDue: 1 });
+    expect(await runDailyJob(db, TEST_NOW)).toEqual(result);
+    const rows = await db.reminder.findMany({ where: { clientId: tom.id } });
+    expect(rows.map((r) => [r.offsetDays, r.status])).toEqual([[7, "DUE"]]);
   });
 });

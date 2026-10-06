@@ -37,7 +37,7 @@
 | Server | Express 5 | The MCP TypeScript SDK's Streamable HTTP examples and tRPC's server adapter both target Express, so both mount in one process |
 | Dashboard API | tRPC v11 | End-to-end types between `apps/web` and the server with no code generation |
 | MCP | `@modelcontextprotocol/sdk` (TypeScript), Streamable HTTP transport | Official SDK, remote transport usable by Claude Code and other clients |
-| Background jobs | pg-boss | Queue and cron on the same Postgres, so no Redis to run |
+| Background jobs | Railway cron services | A short script started on schedule, so no queue or Redis to run. A queue (pg-boss) can come with automatic sending in M4 |
 | File storage | Railway Bucket in Singapore (`sin`), Adobe S3Mock locally (MinIO no longer publishes Docker images) | S3-compatible, private, free egress and API calls; presigned URLs keep files off the server |
 | Web app | React 19 + Vite, TanStack Router, TanStack Query (through the tRPC client) | Typed routes, cached server state |
 | Styling | Tailwind CSS v4 with CSS variables for theme tokens, Radix primitives for dialogs and menus | Theme colour changes at runtime; accessible primitives |
@@ -435,7 +435,8 @@ These live in `core` and are covered by tests.
 
 - **Format:** `ezv_live_` followed by 32 random bytes in base62, about 52 characters in total.
 - **Storage:** only the SHA-256 hex digest and the last four characters. The plain token is shown once at creation.
-- **Creation in the MVP:** manual, as requested. Two ways:
+- **Creation in the dashboard (M3):** the owner creates tokens under Settings, for anyone on the team, with an optional expiry. The token is shown once with a copy button and only its hash is stored. Creating a token needs full team access and a person, never an assistant.
+- **Creation by hand:** the first owner token, and any token when the dashboard is not at hand. Two ways:
 
 ```bash
 pnpm --filter @ezvisa/db token:create --employee namtarn@example.com --label "Namtarn laptop"
@@ -534,7 +535,8 @@ type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM"; db: PrismaCl
 
 ### 6.4 Files
 
-- Uploads from the dashboard use presigned PUT URLs valid for 10 minutes. The browser uploads straight to the bucket, then confirms. The server checks size and type, then stores the SHA-256.
+- Uploads from the dashboard use presigned PUT URLs valid for 10 minutes. The browser uploads straight to the bucket, then confirms. The server checks size and type, then stores the SHA-256. Template forms use the same flow.
+- Browsers may PUT to the bucket only from the dashboard's origin. The server sets that CORS rule on the bucket each time it starts, from `APP_URL` and the Railway domain, so every environment's bucket gets it without manual steps. Locally, the disk storage answers the same CORS checks.
 - Downloads use presigned GET URLs valid for 5 minutes. Every read is written to the audit log.
 - On Railway, bucket egress is free but service egress is billed. Going direct to the bucket in both directions keeps file traffic off the server's bill.
 - The S3 client uses the bucket's endpoint, region `auto` and virtual-hosted URLs. It sends no server-side-encryption headers, which Railway buckets do not support. Railway encrypts objects at rest.
@@ -602,13 +604,13 @@ Server-side extraction and pre-fill come later and reuse the same services (sect
 ## 8. Reminders
 
 - **Rules:** one `ReminderRule` per deadline kind, seeded as `STAY_ENDS: [60, 30, 14, 7]` and `REPORT_DUE: [14, 7, 2]`. They are editable from Settings or `update_reminder_rule`, by roles with full reminder access.
-- **Daily job:** runs at 08:00 Asia/Bangkok through pg-boss cron.
+- **Daily job:** the `jobs` Railway cron service runs `packages/core/dist/scripts/daily.js` at 08:00 Asia/Bangkok (01:00 UTC) and exits. Locally it is `pnpm job:daily`. Running it twice does no harm.
   1. For each client whose `stayUntil` falls within the next 60 days, or whose `nextReportDue` falls within the next 30, it upserts one `Reminder` per offset with `sendOn = deadline − offset`.
   2. It cancels pending reminders whose deadline no longer matches the client.
   3. It marks `SCHEDULED` reminders with `sendOn ≤ today` as `DUE`.
-- **Before the job exists (M1 and M2):** `list_reminders` runs the same idempotent sync on demand, so reminders work as soon as the MCP server does. When a deadline is first learned with send dates already past, one catch-up reminder is created, unless a scheduled one goes out within three days.
+- **On demand as well:** `list_reminders` and the Reminders screen run the same idempotent sync, so a missed job run never hides a reminder. When a deadline is first learned with send dates already past, one catch-up reminder is created, unless a scheduled one goes out within three days.
 - **Linking to cases:** a deadline counts as "case open" when the client has an open case whose template `deadlineKind` matches. The dashboard then offers "Open case" instead of "Send now".
-- **Sending in the MVP is manual.** "Send now" renders the message, copies it to the clipboard, and marks the reminder `SENT` with the text and the sender. Staff paste it into LINE or WhatsApp. Automatic delivery is on the roadmap.
+- **Sending in the MVP is manual.** "Send now" renders the message, copies it to the clipboard, and marks the reminder `SENT` with the text and the sender. Staff paste it into LINE or WhatsApp. The message can be edited first, and the text actually sent is saved. If the browser refuses the clipboard, the message opens for copying by hand with a "Mark sent" button. Automatic delivery is on the roadmap.
 - **Message variables:** `{first_name}`, `{deadline}` (for example "27 Oct"), `{days_left}`, `{agent_name}`.
 
 Default stay message:
@@ -655,7 +657,19 @@ Each screen matches a frame of the mockup.
 | `/templates/:slug` | Checklist, forms and files, known failures, draft and publish | `templates.get`, template mutations |
 | `/settings` | Theme colour, tokens (list and revoke), MCP connection details | `settings.*`, `tokens.*` |
 
-M2 delivers every screen above in read-only form. Reminders shows each message as it would be sent, without sending it, and the theme choice on Settings is saved in the browser only. Tokens are listed, masked, on the Team screen. Checklist updates, stage moves, uploads, template editing, manual sends, the organisation theme and token revocation arrive with M3.
+M2 delivered every screen above in read-only form. M3 adds the write side, each control shown only to roles that can use it:
+
+| Screen | Actions |
+|---|---|
+| Cases | New case: client, template, assignee, due date |
+| Case detail | The next stage in one click ("Start collecting", "Move to drafting", "Send for validation", "Approve the pack", "Log the outcome"); change stage or cancel with a note; edit assignee, due date and notes; per checklist item a one-tap "Verify" or "Upload", and a menu to set any status with its note and documents; upload documents to the case |
+| Clients, client detail | New client, edit, record or withdraw consent, open a case, upload documents |
+| Reminders | Send now, edit the message, copy, mark sent, skip; open a case from a deadline; edit the schedule |
+| Templates, template detail | New template; edit template (the first change starts a draft); add, edit, reorder and remove items; attach forms; edit known failures; publish with notes or discard the draft; archive |
+| Team | Add an employee, then create their token; edit; deactivate |
+| Settings | Make a colour the agency colour; the name in messages; create and revoke access tokens |
+
+The mockup draws most of these buttons without behaviour, so their flows follow the rules in section 4.3: the server refuses what the role or the guards do not allow, and the dashboard shows the reason.
 
 ### 10.2 Behaviour
 
@@ -725,6 +739,7 @@ Everything runs in one Railway project in the Singapore region. The project is d
 | Resource | Type | Region | Role |
 |---|---|---|---|
 | `server` | Service built from the GitHub repository | `asia-southeast1-eqsg3a` (Singapore) | Serves `/auth`, `/trpc`, `/mcp`, `/health` and the web build. One replica in the MVP. |
+| `jobs` | Cron service built from the same repository | Singapore | Runs the daily reminder job at 08:00 Bangkok time, then exits |
 | `postgres` | Railway Postgres | Singapore | Private network only; point-in-time recovery on |
 | `documents` | Railway Bucket | `sin` (Singapore) | Client documents and template files |
 | `documents-backup` | Railway Bucket | `sin` (Singapore) | Nightly copy of new objects and weekly database dumps |
@@ -784,7 +799,7 @@ Two points to confirm with `railway config plan` in M0. First, the bucket variab
 - **Health check.** `/health` returns 200 only when the database answers. Railway switches traffic to a new deployment only after it passes.
 - **Database connection.** The server uses the private `DATABASE_URL`. The database has no public TCP proxy, and staff reach it with `railway connect postgres` when needed.
 - **Buckets** are reachable only over the public network. That is why browsers upload and download directly with presigned URLs.
-- **Scheduled jobs** run inside the server through pg-boss: reminders at 08:00, the bucket backup at 02:00 and retention at 03:00, all Asia/Bangkok. If the server ever runs more than one replica, pg-boss still runs each job once.
+- **Scheduled jobs** are Railway cron services: Railway starts the script on schedule, it runs once and exits, and a run still going when the next is due is skipped. Schedules are in UTC. The reminder job runs at 08:00 Asia/Bangkok. The bucket backup (02:00) and retention (03:00) will be cron scripts in the same way. A cron service runs separately from the server, so the number of server replicas never multiplies a job.
 - **Logs** are structured JSON written to standard output, read in Railway's log explorer. They never contain names, passport numbers or file contents.
 
 ### 12.4 Environments
@@ -834,7 +849,7 @@ Buckets cost USD 0.015 per GB-month, with free egress and free API calls. Sixty 
 | M3 | Dashboard, write side, and reminders | Checklist updates, stage moves, uploads, template editing and publishing, the reminder job, the Reminders screen with manual send, theme and token settings. Namtarn runs her real cases on it. |
 | M4 | Next | PDF pre-fill from `fieldMap`, automatic reminder delivery (email, then WhatsApp through Twilio, then the LINE Messaging API), server-side document extraction, client portal, OAuth for hosted MCP connectors. |
 
-Status: M0 to M2 are built and tested locally. Applying the Railway configuration (M0) and running the tools from Claude Code against production (M1) wait on the Railway project.
+Status: M0 to M3 are built and tested locally. Applying the Railway configuration (M0) and running the tools from Claude Code against production (M1) wait on the Railway project.
 
 M1 comes before the dashboard on purpose. Once it ships, Namtarn's data can be entered and queried through Claude while the screens are being built.
 

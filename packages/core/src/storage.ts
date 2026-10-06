@@ -2,6 +2,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  PutBucketCorsCommand,
   PutObjectCommand,
   S3Client,
 } from "@aws-sdk/client-s3";
@@ -75,6 +76,29 @@ export class S3Storage implements Storage {
       this.client,
       new PutObjectCommand({ Bucket: this.bucket, Key: key, ContentType: contentType }),
       { expiresIn: expiresInSeconds },
+    );
+  }
+
+  /**
+   * Lets browsers on these origins PUT to presigned upload links. Railway buckets need
+   * this for dashboard uploads; each environment has its own bucket, so the server sets
+   * it on start. Replaces any existing CORS rules.
+   */
+  async allowBrowserUploads(origins: string[]): Promise<void> {
+    await this.client.send(
+      new PutBucketCorsCommand({
+        Bucket: this.bucket,
+        CORSConfiguration: {
+          CORSRules: [
+            {
+              AllowedOrigins: origins,
+              AllowedMethods: ["PUT"],
+              AllowedHeaders: ["content-type"],
+              MaxAgeSeconds: 3000,
+            },
+          ],
+        },
+      }),
     );
   }
 

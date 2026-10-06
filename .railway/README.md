@@ -1,6 +1,9 @@
 # Railway infrastructure
 
-`railway.ts` describes the whole EzVisa project on Railway: the `server` service, Postgres and two buckets, all in Singapore. Railway's older `railway.json` files are deprecated and are not used here.
+`railway.ts` describes the whole EzVisa project on Railway, all in Singapore: the `server` service, the `jobs` cron service, Postgres and two buckets. Railway's older `railway.json` files are deprecated and are not used here.
+
+- `server` serves the dashboard, `/trpc`, `/auth` and `/mcp`. On start it sets the `documents` bucket's CORS rule so browsers on `APP_URL` can upload straight to it.
+- `jobs` runs `packages/core/dist/scripts/daily.js` at 01:00 UTC (08:00 in Bangkok) and exits: it schedules reminders for new or changed deadlines and marks today's as due. Running it by hand is safe. Locally, run `pnpm job:daily`.
 
 ## First setup (once, by hand)
 

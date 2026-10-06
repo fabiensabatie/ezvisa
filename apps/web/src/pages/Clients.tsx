@@ -1,8 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
+import { ClientDialog } from "../components/ClientDialog";
+import { Button } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { Avatar, Card, Chip, Empty, PageHeader, QueryView } from "../components/ui";
+import { useCan } from "../lib/can";
 import { countryName, daysUntil, formatDate, plural, relativeDays } from "../lib/format";
 import { CHANNEL_LABEL, dueTone } from "../lib/tones";
 import { useTRPC } from "../trpc";
@@ -37,6 +40,8 @@ export function ClientsPage() {
   const trpc = useTRPC();
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<(typeof FILTERS)[number]["key"]>("all");
+  const [adding, setAdding] = useState(false);
+  const { can } = useCan();
   const term = useDebounced(search.trim());
   const days = FILTERS.find((f) => f.key === filter)?.days;
   const list = useQuery(
@@ -53,24 +58,32 @@ export function ClientsPage() {
         title="Clients"
         subtitle={list.data ? `${plural(list.data.items.length, "client")} shown` : " "}
       >
-        <div className="relative w-full max-w-xs">
-          <label htmlFor="client-search" className="sr-only">
-            Search clients
-          </label>
-          <Icon
-            name="search"
-            className="pointer-events-none absolute left-3.5 top-3.5 text-muted"
-          />
-          <input
-            id="client-search"
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Name, email, phone, passport…"
-            className="h-11 w-full rounded-full border border-line bg-white pl-10 pr-4 text-sm outline-none focus:border-accent"
-          />
+        <div className="flex w-full flex-wrap items-center gap-2 sm:w-auto">
+          <div className="relative w-full sm:w-72">
+            <label htmlFor="client-search" className="sr-only">
+              Search clients
+            </label>
+            <Icon
+              name="search"
+              className="pointer-events-none absolute left-3.5 top-3.5 text-muted"
+            />
+            <input
+              id="client-search"
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Name, email, phone, passport…"
+              className="h-11 w-full rounded-full border border-line bg-white pl-10 pr-4 text-sm outline-none focus:border-accent"
+            />
+          </div>
+          {can("clients", "edit") && (
+            <Button icon="plus" onClick={() => setAdding(true)}>
+              New client
+            </Button>
+          )}
         </div>
       </PageHeader>
+      {adding && <ClientDialog open onClose={() => setAdding(false)} />}
 
       <fieldset className="mb-4 flex flex-wrap gap-2">
         <legend className="sr-only">Filter clients</legend>

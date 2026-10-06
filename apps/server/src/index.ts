@@ -1,5 +1,11 @@
 import { fileURLToPath } from "node:url";
-import { LocalDiskStorage, loadRootEnv, type Storage, storageFromEnv } from "@ezvisa/core";
+import {
+  LocalDiskStorage,
+  loadRootEnv,
+  S3Storage,
+  type Storage,
+  storageFromEnv,
+} from "@ezvisa/core";
 import { createDb } from "@ezvisa/db";
 import { createApp } from "./app.js";
 
@@ -23,7 +29,40 @@ if (!storage && !production) {
   console.log(JSON.stringify({ level: "warn", msg: "S3_* not set: document storage is disabled" }));
 }
 
-const app = createApp({ db, version, storage, webDir: production ? webDir : undefined });
+// Browsers upload straight to the bucket, so it must accept PUTs from the dashboard.
+const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
+const uploadOrigins = [
+  ...new Set(
+    [process.env.APP_URL ?? (production ? undefined : "http://localhost:5173")]
+      .concat(publicDomain ? [`https://${publicDomain}`] : [])
+      .filter((origin): origin is string => Boolean(origin))
+      .map((origin) => origin.replace(/\/$/, "")),
+  ),
+];
+if (storage instanceof S3Storage && uploadOrigins.length > 0) {
+  storage
+    .allowBrowserUploads(uploadOrigins)
+    .then(() =>
+      console.log(JSON.stringify({ level: "info", msg: "bucket CORS set", uploadOrigins })),
+    )
+    .catch((error: unknown) =>
+      console.log(
+        JSON.stringify({
+          level: "warn",
+          msg: "could not set bucket CORS; browser uploads may fail",
+          error: error instanceof Error ? error.message : String(error),
+        }),
+      ),
+    );
+}
+
+const app = createApp({
+  db,
+  version,
+  storage,
+  uploadOrigins,
+  webDir: production ? webDir : undefined,
+});
 
 const server = app.listen(port, () => {
   console.log(JSON.stringify({ level: "info", msg: "server listening", port, version }));

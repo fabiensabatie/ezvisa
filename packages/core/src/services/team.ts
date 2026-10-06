@@ -1,10 +1,11 @@
 import { z } from "zod";
 import { audit } from "../audit.js";
-import { type Context, requireLevel } from "../context.js";
+import { type Context, requireHuman, requireLevel } from "../context.js";
 import { employeeDto, roleDto, tokenDto } from "../dto.js";
 import { DomainError } from "../errors.js";
 import { permissionsSchema } from "../permissions.js";
 import { id, notFound } from "../refs.js";
+import { generateToken, hashToken, tokenLast4 } from "../tokens.js";
 
 // ---- whoami ---------------------------------------------------------------
 
@@ -53,6 +54,17 @@ export async function listEmployees(ctx: Context, raw: z.input<typeof listEmploy
     orderBy: { name: "asc" },
   });
   return { items: rows.map(employeeDto) };
+}
+
+/** People a case can be assigned to. Needs only case access, unlike the team list. */
+export async function listAssignees(ctx: Context) {
+  requireLevel(ctx, "cases", "view");
+  const rows = await ctx.db.employee.findMany({
+    where: { active: true, kind: "HUMAN" },
+    include: withRole,
+    orderBy: { name: "asc" },
+  });
+  return { items: rows.map((e) => ({ id: e.id, name: e.name, role: e.role.name })) };
 }
 
 export async function getEmployee(ctx: Context, raw: z.input<typeof getEmployeeInput>) {
@@ -259,6 +271,11 @@ export const listTokensInput = z.object({
   employeeId: id("Employee").optional().describe("Only this employee's tokens"),
 });
 export const revokeTokenInput = z.object({ tokenId: id("Token") });
+export const createTokenInput = z.object({
+  employeeId: id("Employee"),
+  label: z.string().trim().min(1).max(80).describe('Where it is used, e.g. "Ploy phone"'),
+  expiresInDays: z.number().int().min(1).max(3650).optional(),
+});
 
 export async function listTokens(ctx: Context, raw: z.input<typeof listTokensInput>) {
   requireLevel(ctx, "team", "full");
@@ -270,6 +287,39 @@ export async function listTokens(ctx: Context, raw: z.input<typeof listTokensInp
   });
   const now = ctx.now();
   return { items: rows.map((t) => tokenDto(t, now)) };
+}
+
+/** Creates an access token. The plain token is returned once and never stored. */
+export async function createToken(ctx: Context, raw: z.input<typeof createTokenInput>) {
+  requireLevel(ctx, "team", "full");
+  requireHuman(ctx, "create access tokens");
+  const input = createTokenInput.parse(raw);
+  const employee = await ctx.db.employee.findUnique({ where: { id: input.employeeId } });
+  if (!employee?.active) throw notFound("active employee", input.employeeId);
+
+  const token = generateToken();
+  const now = ctx.now();
+  return ctx.db.$transaction(async (tx) => {
+    const row = await tx.apiToken.create({
+      data: {
+        employeeId: employee.id,
+        label: input.label,
+        hash: hashToken(token),
+        last4: tokenLast4(token),
+        expiresAt: input.expiresInDays
+          ? new Date(now.getTime() + input.expiresInDays * 86_400_000)
+          : null,
+      },
+      include: { employee: true },
+    });
+    await audit(tx, ctx, {
+      action: "token.created",
+      entity: "ApiToken",
+      entityId: row.id,
+      after: { employee: employee.name, label: row.label, expiresAt: row.expiresAt },
+    });
+    return { ...tokenDto(row, now), secret: token };
+  });
 }
 
 export async function revokeToken(ctx: Context, raw: z.input<typeof revokeTokenInput>) {
