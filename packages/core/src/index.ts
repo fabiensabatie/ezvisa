@@ -13,6 +13,7 @@ export * from "./dates.js";
 export * from "./dto.js";
 export { loadRootEnv } from "./env.js";
 export { DomainError, type ErrorCode, isDomainError } from "./errors.js";
+export { LOCAL_STORAGE_PATH, LocalDiskStorage } from "./local-storage.js";
 export { type Page, pageArgs, pageInput, toPage } from "./pagination.js";
 export {
   hasLevel,

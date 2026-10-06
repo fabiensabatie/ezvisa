@@ -17,6 +17,8 @@
     "db:deploy": "pnpm --filter @ezvisa/db migrate:deploy",
     "db:studio": "pnpm --filter @ezvisa/db studio",
     "db:seed": "pnpm --filter @ezvisa/core seed",
+    "db:sample": "pnpm --filter @ezvisa/core sample",
+    "db:local": "pnpm --filter @ezvisa/db exec prisma dev --name ezvisa",
     "token:create": "pnpm --filter @ezvisa/core token:create",
     "token:list": "pnpm --filter @ezvisa/core token:list",
     "token:revoke": "pnpm --filter @ezvisa/core token:revoke",

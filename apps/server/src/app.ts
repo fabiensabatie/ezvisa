@@ -1,10 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import type { Storage } from "@ezvisa/core";
+import { LOCAL_STORAGE_PATH, LocalDiskStorage, type Storage } from "@ezvisa/core";
 import type { Db } from "@ezvisa/db";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import express, { type Express } from "express";
+import { devStorageRouter } from "./dev-storage.js";
 import { mcpRouter } from "./mcp.js";
 import { appRouter } from "./router.js";
 
@@ -19,7 +20,7 @@ export type AppOptions = {
   mcpRateLimit?: number;
 };
 
-const API_PREFIXES = ["/trpc", "/auth", "/mcp", "/health"];
+const API_PREFIXES = ["/trpc", "/auth", "/mcp", "/health", LOCAL_STORAGE_PATH];
 
 export function createApp({
   db,
@@ -43,6 +44,7 @@ export function createApp({
   });
 
   app.use(mcpRouter({ db, storage, version, now, rateLimit: mcpRateLimit }));
+  if (storage instanceof LocalDiskStorage) app.use(devStorageRouter(storage));
 
   app.use(
     "/trpc",

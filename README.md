@@ -50,6 +50,22 @@ pnpm dev
 
 The seed prints an owner token once. The dashboard runs at http://localhost:5173 and the server at http://localhost:3000.
 
+### Without Docker
+
+Prisma ships a local Postgres. Without S3 settings, documents are stored on disk in `.data/storage` (development only).
+
+```bash
+pnpm db:local
+```
+
+Leave that running, copy its `postgres://` URL into `DATABASE_URL` in `.env`, then:
+
+```bash
+pnpm db:deploy && pnpm db:seed && pnpm db:sample && pnpm dev
+```
+
+`pnpm db:sample` loads four templates, a validator and a runner, nine clients and six cases at different stages, with dates relative to today. Set `SEED_OWNER_TOKEN` and `SEED_ASSISTANT_TOKEN` in `.env` before seeding to get fixed tokens for local testing.
+
 ## Connecting Claude
 
 Any MCP client that can send a header works. With Claude Code:

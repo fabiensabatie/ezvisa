@@ -147,3 +147,6 @@ vite.config.ts.timestamp-*
 .turbo/
 packages/db/src/generated/
 *.tsbuildinfo
+
+# Local development storage (documents uploaded without an S3 bucket)
+.data/

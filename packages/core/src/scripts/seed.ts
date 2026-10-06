@@ -15,7 +15,7 @@ if (isProduction && !process.env.SEED_OWNER_EMAIL) {
 
 await runWithDb(async (db) => {
   const ownerEmail = (process.env.SEED_OWNER_EMAIL || "namtarn@ezvisa.local").toLowerCase();
-  const { owner } = await seedBase(db, { email: ownerEmail, name: "Namtarn" });
+  const { owner, assistant } = await seedBase(db, { email: ownerEmail, name: "Namtarn" });
 
   const activeTokens = await db.apiToken.count({
     where: { employeeId: owner.id, revokedAt: null },
@@ -43,6 +43,22 @@ await runWithDb(async (db) => {
       },
     });
     console.log(`Created a token for ${ownerEmail}. It is shown once:\n\n  ${token}\n`);
+  }
+
+  const assistantToken = process.env.SEED_ASSISTANT_TOKEN?.trim();
+  if (assistantToken && !isProduction) {
+    const hash = hashToken(assistantToken);
+    await db.apiToken.upsert({
+      where: { hash },
+      update: {},
+      create: {
+        employeeId: assistant.id,
+        label: "Seed assistant token",
+        hash,
+        last4: tokenLast4(assistantToken),
+      },
+    });
+    console.log("Seed assistant token from SEED_ASSISTANT_TOKEN is ready for Claude.");
   }
 
   console.log(
