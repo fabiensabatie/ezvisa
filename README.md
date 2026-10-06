@@ -17,14 +17,14 @@ The dashboard mockup is a clickable design canvas: [EzVisa Dashboard Mockup](htt
 
 ## Status
 
-M0 (scaffold) and M1 (data, tokens and MCP) are built. The MCP server exposes 51 tools over clients, cases, documents, templates, reminders and the team, each token seeing only what its role allows. Next is M2, the dashboard screens.
+M0 (scaffold), M1 (data, tokens and MCP) and M2 (dashboard, read side) are built. The MCP server exposes 51 tools over clients, cases, documents, templates, reminders and the team, each token seeing only what its role allows. The dashboard signs in with the same tokens and shows the overview, case board, case and client pages, reminders, team, templates and settings on live data. Next is M3: checklist updates, stage moves, uploads and the other write actions in the dashboard.
 
 ## Repository
 
 | Path | What |
 |---|---|
-| `apps/server` | Express 5: `/health`, `/mcp` (token-authenticated MCP), `/trpc`, later `/auth`; serves the dashboard build in production |
-| `apps/web` | React 19 + Vite dashboard, Tailwind v4, tRPC client |
+| `apps/server` | Express 5: `/health`, `/auth` (token sign-in, session cookie), `/trpc` (dashboard API), `/mcp` (token-authenticated MCP); serves the dashboard build in production |
+| `apps/web` | React 19 + Vite dashboard: TanStack Router and Query, tRPC client, Tailwind v4 |
 | `packages/db` | Prisma 7 schema, migrations and client |
 | `packages/core` | Domain logic: tokens, permissions, errors; seed and token scripts |
 | `packages/mcp` | MCP server definition |
@@ -48,7 +48,7 @@ pnpm db:seed
 pnpm dev
 ```
 
-The seed prints an owner token once. The dashboard runs at http://localhost:5173 and the server at http://localhost:3000.
+The seed prints an owner token once. The dashboard runs at http://localhost:5173 and the server at http://localhost:3000. Sign in to the dashboard with that token: it becomes an httpOnly session cookie for 30 days, and the token itself is never kept in the browser.
 
 ### Without Docker
 
@@ -58,7 +58,7 @@ Prisma ships a local Postgres. Without S3 settings, documents are stored on disk
 pnpm db:local
 ```
 
-Leave that running, copy its `postgres://` URL into `DATABASE_URL` in `.env`, then:
+Leave that running, copy its `postgres://` URL into `DATABASE_URL` in `.env` and set `DATABASE_POOL_MAX=1` (that local Postgres mixes up queries arriving on parallel connections), then:
 
 ```bash
 pnpm db:deploy && pnpm db:seed && pnpm db:sample && pnpm dev
