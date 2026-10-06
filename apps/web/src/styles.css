@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+/* Theme tokens are CSS variables written at runtime by applyTheme() from @ezvisa/ui. */
+@theme inline {
+  --color-accent: var(--ezv-accent);
+  --color-ink: var(--ezv-ink);
+  --color-text: var(--ezv-text);
+  --color-text-soft: var(--ezv-text-soft);
+  --color-muted: var(--ezv-muted);
+  --color-bg: var(--ezv-bg);
+  --color-side: var(--ezv-side);
+  --color-soft: var(--ezv-soft);
+  --color-soft-2: var(--ezv-soft-2);
+  --color-line: var(--ezv-line);
+  --color-petal: var(--ezv-petal);
+  --color-petal-light: var(--ezv-petal-light);
+  --shadow-card: var(--ezv-shadow);
+  --shadow-lift: var(--ezv-shadow-lg);
+  --font-display: "Fredoka", "Nunito", system-ui, sans-serif;
+  --font-sans: "Nunito", system-ui, sans-serif;
+}
+
+body {
+  @apply bg-bg text-text font-sans antialiased;
+  margin: 0;
+}

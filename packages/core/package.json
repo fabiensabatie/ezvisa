@@ -1,0 +1,34 @@
+{
+  "name": "@ezvisa/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@ezvisa/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "seed": "tsx --conditions=@ezvisa/source src/scripts/seed.ts",
+    "token:create": "tsx --conditions=@ezvisa/source src/scripts/token-create.ts",
+    "token:list": "tsx --conditions=@ezvisa/source src/scripts/token-list.ts",
+    "token:revoke": "tsx --conditions=@ezvisa/source src/scripts/token-revoke.ts"
+  },
+  "dependencies": {
+    "@ezvisa/db": "workspace:*",
+    "dotenv": "^18.0.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@ezvisa/config": "workspace:*",
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

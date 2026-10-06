@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: ezvisa
+          POSTGRES_PASSWORD: ezvisa
+          POSTGRES_DB: ezvisa
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ezvisa"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      DATABASE_URL: postgresql://ezvisa:ezvisa@localhost:5432/ezvisa
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+      - run: pnpm build
+
+      # Prove the migrations apply to an empty database and the seed is idempotent.
+      - run: pnpm db:deploy
+      - run: pnpm db:seed
+      - run: pnpm db:seed
