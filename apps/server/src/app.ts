@@ -1,10 +1,18 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { LOCAL_STORAGE_PATH, LocalDiskStorage, type Storage } from "@ezvisa/core";
+import {
+  authenticateSession,
+  LOCAL_STORAGE_PATH,
+  LocalDiskStorage,
+  SESSION_COOKIE,
+  type Storage,
+} from "@ezvisa/core";
 import type { Db } from "@ezvisa/db";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import express, { type Express } from "express";
+import { authRouter } from "./auth.js";
+import { readCookie } from "./cookies.js";
 import { devStorageRouter } from "./dev-storage.js";
 import { mcpRouter } from "./mcp.js";
 import { appRouter } from "./router.js";
@@ -18,6 +26,9 @@ export type AppOptions = {
   webDir?: string;
   now?: () => Date;
   mcpRateLimit?: number;
+  loginRateLimit?: number;
+  /** Defaults to true in production. Secure cookies need HTTPS. */
+  secureCookies?: boolean;
 };
 
 const API_PREFIXES = ["/trpc", "/auth", "/mcp", "/health", LOCAL_STORAGE_PATH];
@@ -27,8 +38,10 @@ export function createApp({
   version,
   webDir,
   storage = null,
-  now,
+  now = () => new Date(),
   mcpRateLimit,
+  loginRateLimit,
+  secureCookies = process.env.NODE_ENV === "production",
 }: AppOptions): Express {
   const app = express();
   app.disable("x-powered-by");
@@ -43,6 +56,7 @@ export function createApp({
     }
   });
 
+  app.use(authRouter({ db, now, secureCookies, loginRateLimit }));
   app.use(mcpRouter({ db, storage, version, now, rateLimit: mcpRateLimit }));
   if (storage instanceof LocalDiskStorage) app.use(devStorageRouter(storage));
 
@@ -50,7 +64,13 @@ export function createApp({
     "/trpc",
     createExpressMiddleware({
       router: appRouter,
-      createContext: () => ({ requestId: randomUUID() }),
+      async createContext({ req }) {
+        const sessionId = readCookie(req.header("cookie"), SESSION_COOKIE);
+        const actor = sessionId
+          ? await authenticateSession(db, sessionId, now()).catch(() => null)
+          : null;
+        return { requestId: randomUUID(), db, storage, now, actor };
+      },
     }),
   );
 

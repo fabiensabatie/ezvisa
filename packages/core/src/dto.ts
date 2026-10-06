@@ -96,7 +96,7 @@ export function templateItemDto(i: TemplateItem) {
     description: i.description,
     kind: i.kind,
     required: i.required,
-    rules: i.rules,
+    rules: i.rules as Record<string, unknown> | null,
     formFileId: i.formFileId,
   };
 }
@@ -158,7 +158,7 @@ export function documentDto(d: Document) {
     mimeType: d.mimeType,
     sizeBytes: d.sizeBytes,
     sha256: d.sha256,
-    extracted: d.extracted,
+    extracted: d.extracted as Record<string, unknown> | null,
     createdAt: iso(d.createdAt),
   };
 }

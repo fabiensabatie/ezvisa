@@ -655,6 +655,8 @@ Each screen matches a frame of the mockup.
 | `/templates/:slug` | Checklist, forms and files, known failures, draft and publish | `templates.get`, template mutations |
 | `/settings` | Theme colour, tokens (list and revoke), MCP connection details | `settings.*`, `tokens.*` |
 
+M2 delivers every screen above in read-only form. Reminders shows each message as it would be sent, without sending it, and the theme choice on Settings is saved in the browser only. Tokens are listed, masked, on the Team screen. Checklist updates, stage moves, uploads, template editing, manual sends, the organisation theme and token revocation arrive with M3.
+
 ### 10.2 Behaviour
 
 - Data loads through tRPC with TanStack Query. Checklist toggles and stage moves update optimistically and roll back on error.
@@ -690,6 +692,7 @@ pnpm dev
 | Variable | Used by | On Railway |
 |---|---|---|
 | `DATABASE_URL` | db, server | Reference to the Postgres service's private URL |
+| `DATABASE_POOL_MAX` | db (optional) | Unset. Locally, `1` with `pnpm db:local`, whose Postgres mixes up queries arriving on parallel connections |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | server | References to the `documents` bucket's variables |
 | `BACKUP_S3_*` (same five) | server, backup job | References to the `documents-backup` bucket |
 | `APP_URL` | server (cookies, links in messages) | The custom domain in production, the Railway domain elsewhere |
@@ -830,6 +833,8 @@ Buckets cost USD 0.015 per GB-month, with free egress and free API calls. Sixty 
 | M2 | Dashboard, read side | Token sign-in. Overview, cases, case detail, clients, team and templates show live data, styled like the mockup. |
 | M3 | Dashboard, write side, and reminders | Checklist updates, stage moves, uploads, template editing and publishing, the reminder job, the Reminders screen with manual send, theme and token settings. Namtarn runs her real cases on it. |
 | M4 | Next | PDF pre-fill from `fieldMap`, automatic reminder delivery (email, then WhatsApp through Twilio, then the LINE Messaging API), server-side document extraction, client portal, OAuth for hosted MCP connectors. |
+
+Status: M0 to M2 are built and tested locally. Applying the Railway configuration (M0) and running the tools from Claude Code against production (M1) wait on the Railway project.
 
 M1 comes before the dashboard on purpose. Once it ships, Namtarn's data can be entered and queried through Claude while the screens are being built.
 

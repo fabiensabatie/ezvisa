@@ -32,11 +32,20 @@ export { caseNumber, caseRef, caseWhere, templateRef, templateWhere } from "./re
 export { ASSISTANT_EMAIL, REMINDER_RULES, seedBase } from "./seed-base.js";
 export * as cases from "./services/cases.js";
 export * as clients from "./services/clients.js";
+export * as dashboard from "./services/dashboard.js";
 export * as documents from "./services/documents.js";
 export { ALLOWED_MIME_TYPES, MAX_INLINE_BYTES, MAX_UPLOAD_BYTES } from "./services/files.js";
 export * as reminders from "./services/reminders.js";
+export * as settings from "./services/settings.js";
 export * as team from "./services/team.js";
 export * as templates from "./services/templates.js";
+export {
+  authenticateSession,
+  createSession,
+  endSession,
+  SESSION_COOKIE,
+  SESSION_DAYS,
+} from "./sessions.js";
 export { MemoryStorage, S3Storage, type Storage, storageFromEnv } from "./storage.js";
 export {
   generateToken,
