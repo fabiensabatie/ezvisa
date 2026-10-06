@@ -15,7 +15,8 @@
       "dependsOn": ["^generate", "generate"]
     },
     "test": {
-      "dependsOn": ["^generate", "generate"]
+      "dependsOn": ["^generate", "generate", "^test"],
+      "passThroughEnv": ["TEST_DATABASE_URL"]
     },
     "dev": {
       "dependsOn": ["^generate", "generate"],

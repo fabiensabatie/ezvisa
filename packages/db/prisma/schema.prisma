@@ -227,7 +227,8 @@ model TemplateFile {
   version    TemplateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
   name       String
   kind       FileKind
-  storageKey String          @unique
+  /// Shared between versions: a new draft copies the rows, not the objects
+  storageKey String
   mimeType   String
   sizeBytes  Int
   /// Reserved for PDF pre-fill (roadmap)
@@ -235,6 +236,7 @@ model TemplateFile {
   items      TemplateItem[]
 
   @@index([versionId])
+  @@index([storageKey])
 }
 
 model Case {

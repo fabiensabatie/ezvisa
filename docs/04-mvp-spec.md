@@ -463,7 +463,7 @@ The raw token is never stored in the browser. Replacing tokens with real account
 
 ### 5.3 MCP authentication
 
-Every MCP request carries `Authorization: Bearer ezv_live_…`. The server resolves the token to an `Actor` with a 60-second in-memory cache. A missing or invalid token gets HTTP 401 before any MCP processing.
+Every MCP request carries `Authorization: Bearer ezv_live_…`. The server resolves the token to an `Actor` with one indexed lookup per request and no cache, so a revoked token is refused on its very next request. A missing or invalid token gets HTTP 401 before any MCP processing.
 
 Static bearer tokens work with clients that let you set headers, such as Claude Code:
 
@@ -556,7 +556,8 @@ type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM"; db: PrismaCl
 
 - Names are `verb_noun` in snake_case. This fits the character rules of every major client.
 - Inputs are Zod schemas with a `.describe()` on every field. They are the same schemas `core` uses.
-- Results return a short text summary plus `structuredContent` matching a declared output schema.
+- Results return the JSON as text, for clients that only read text, plus the same object as `structuredContent`.
+- Each token only sees the tools its role could ever use: an assistant is not shown team administration or delete tools. Finer rules, such as approving a pack, still come back as tool errors.
 - Annotations: list and get tools set `readOnlyHint: true`. Delete, revoke and archive tools set `destructiveHint: true`.
 - List tools take `limit` (default 25, max 100) and `cursor`, and return `nextCursor`.
 - A permission failure is a tool error, not a protocol error, so the model sees why.
@@ -573,8 +574,8 @@ type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM"; db: PrismaCl
 | Templates | `list_templates`, `get_template` (version optional), `create_template`, `update_template`, `add_template_item`, `update_template_item`, `remove_template_item`, `reorder_template_items`, `attach_template_file`, `remove_template_file`, `publish_template_version`, `archive_template` | templates |
 | Cases | `list_cases` (stage, assignee, client, `due_before`), `get_case`, `create_case`, `update_case` (assignee, due date, notes), `move_case_stage`, `close_case` (outcome) | cases, plus the stage guards |
 | Case items | `update_case_item` (status, note, linked documents) | cases: edit |
-| Documents | `list_documents`, `get_document`, `read_document`, `upload_document`, `create_document_upload`, `confirm_document_upload`, `delete_document` | documents |
-| Reminders | `list_deadlines` (`within_days`), `list_reminders` (status), `mark_reminder_sent`, `skip_reminder`, `get_reminder_rules`, `update_reminder_rules` | reminders |
+| Documents | `list_documents`, `get_document`, `read_document`, `upload_document`, `create_document_upload`, `confirm_document_upload`, `update_document` (fields read from it), `delete_document` | documents |
+| Reminders | `list_deadlines` (`within_days`), `list_reminders` (status), `mark_reminder_sent`, `skip_reminder`, `get_reminder_rules`, `update_reminder_rule` | reminders |
 
 Token creation is deliberately not an MCP tool in the MVP. A leaked assistant token must not be able to mint new tokens.
 
@@ -600,11 +601,12 @@ Server-side extraction and pre-fill come later and reuse the same services (sect
 
 ## 8. Reminders
 
-- **Rules:** one `ReminderRule` per deadline kind, seeded as `STAY_ENDS: [60, 30, 14, 7]` and `REPORT_DUE: [14, 7, 2]`. They are editable from Settings or `update_reminder_rules`.
+- **Rules:** one `ReminderRule` per deadline kind, seeded as `STAY_ENDS: [60, 30, 14, 7]` and `REPORT_DUE: [14, 7, 2]`. They are editable from Settings or `update_reminder_rule`, by roles with full reminder access.
 - **Daily job:** runs at 08:00 Asia/Bangkok through pg-boss cron.
   1. For each client whose `stayUntil` falls within the next 60 days, or whose `nextReportDue` falls within the next 30, it upserts one `Reminder` per offset with `sendOn = deadline − offset`.
   2. It cancels pending reminders whose deadline no longer matches the client.
   3. It marks `SCHEDULED` reminders with `sendOn ≤ today` as `DUE`.
+- **Before the job exists (M1 and M2):** `list_reminders` runs the same idempotent sync on demand, so reminders work as soon as the MCP server does. When a deadline is first learned with send dates already past, one catch-up reminder is created, unless a scheduled one goes out within three days.
 - **Linking to cases:** a deadline counts as "case open" when the client has an open case whose template `deadlineKind` matches. The dashboard then offers "Open case" instead of "Send now".
 - **Sending in the MVP is manual.** "Send now" renders the message, copies it to the clipboard, and marks the reminder `SENT` with the text and the sender. Staff paste it into LINE or WhatsApp. Automatic delivery is on the roadmap.
 - **Message variables:** `{first_name}`, `{deadline}` (for example "27 Oct"), `{days_left}`, `{agent_name}`.

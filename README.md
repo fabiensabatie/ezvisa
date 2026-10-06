@@ -17,13 +17,13 @@ The dashboard mockup is a clickable design canvas: [EzVisa Dashboard Mockup](htt
 
 ## Status
 
-Milestone M0, the scaffold, is in place: monorepo, database schema and first migration, token scripts, server with health check, dashboard shell, CI and the Railway infrastructure file. Next is M1, the MCP tools.
+M0 (scaffold) and M1 (data, tokens and MCP) are built. The MCP server exposes 51 tools over clients, cases, documents, templates, reminders and the team, each token seeing only what its role allows. Next is M2, the dashboard screens.
 
 ## Repository
 
 | Path | What |
 |---|---|
-| `apps/server` | Express 5: `/health`, `/trpc`, later `/auth` and `/mcp`; serves the dashboard build in production |
+| `apps/server` | Express 5: `/health`, `/mcp` (token-authenticated MCP), `/trpc`, later `/auth`; serves the dashboard build in production |
 | `apps/web` | React 19 + Vite dashboard, Tailwind v4, tRPC client |
 | `packages/db` | Prisma 7 schema, migrations and client |
 | `packages/core` | Domain logic: tokens, permissions, errors; seed and token scripts |
@@ -50,6 +50,24 @@ pnpm dev
 
 The seed prints an owner token once. The dashboard runs at http://localhost:5173 and the server at http://localhost:3000.
 
+## Connecting Claude
+
+Any MCP client that can send a header works. With Claude Code:
+
+```bash
+claude mcp add --transport http ezvisa http://localhost:3000/mcp --header "Authorization: Bearer <token>"
+```
+
+Use a token created for the employee the assistant acts as. The seed creates "Claude" (assistant@ezvisa.local) with the Assistant role, which can draft and flag but never verify, approve or delete:
+
+```bash
+pnpm token:create --employee assistant@ezvisa.local --label "Claude Code"
+```
+
+## Tests
+
+Unit tests always run. Integration tests run against `TEST_DATABASE_URL` and are skipped when it is not set. They empty that database before every test, so never point it at real data. Docker Compose creates `ezvisa_test` for this on first start.
+
 ## Everyday commands
 
 | Command | Does |
@@ -57,7 +75,7 @@ The seed prints an owner token once. The dashboard runs at http://localhost:5173
 | `pnpm dev` | Server and dashboard with live reload |
 | `pnpm lint` / `pnpm format` | Biome check, or check and fix |
 | `pnpm typecheck` | Every package, plus the Railway file |
-| `pnpm test` | Vitest in every package |
+| `pnpm test` | Vitest in every package, integration tests included when `TEST_DATABASE_URL` is set |
 | `pnpm build` | Compiled packages and the dashboard bundle |
 | `pnpm db:migrate` | Create a migration after editing `schema.prisma` |
 | `pnpm db:studio` | Browse the database |

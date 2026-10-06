@@ -1,22 +1,34 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+import type { Storage } from "@ezvisa/core";
 import type { Db } from "@ezvisa/db";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import express, { type Express } from "express";
+import { mcpRouter } from "./mcp.js";
 import { appRouter } from "./router.js";
 
 export type AppOptions = {
-  /** Only the health check touches the database in M0. */
-  db: Pick<Db, "$queryRaw">;
+  db: Db;
   version: string;
+  /** Document storage. Null when no bucket is configured. */
+  storage?: Storage | null;
   /** Built dashboard to serve. Omitted in development, where Vite serves it. */
   webDir?: string;
+  now?: () => Date;
+  mcpRateLimit?: number;
 };
 
 const API_PREFIXES = ["/trpc", "/auth", "/mcp", "/health"];
 
-export function createApp({ db, version, webDir }: AppOptions): Express {
+export function createApp({
+  db,
+  version,
+  webDir,
+  storage = null,
+  now,
+  mcpRateLimit,
+}: AppOptions): Express {
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -29,6 +41,8 @@ export function createApp({ db, version, webDir }: AppOptions): Express {
       res.status(503).json({ status: "error", database: "unreachable", version });
     }
   });
+
+  app.use(mcpRouter({ db, storage, version, now, rateLimit: mcpRateLimit }));
 
   app.use(
     "/trpc",

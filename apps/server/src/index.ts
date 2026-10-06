@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url";
-import { loadRootEnv } from "@ezvisa/core";
+import { loadRootEnv, storageFromEnv } from "@ezvisa/core";
 import { createDb } from "@ezvisa/db";
 import { createApp } from "./app.js";
 
@@ -11,7 +11,12 @@ const production = process.env.NODE_ENV === "production";
 // src/index.ts and dist/index.js both resolve to apps/web/dist.
 const webDir = fileURLToPath(new URL("../../web/dist", import.meta.url));
 
-const app = createApp({ db, version, webDir: production ? webDir : undefined });
+const storage = storageFromEnv();
+if (!storage) {
+  console.log(JSON.stringify({ level: "warn", msg: "S3_* not set: document storage is disabled" }));
+}
+
+const app = createApp({ db, version, storage, webDir: production ? webDir : undefined });
 const port = Number(process.env.PORT ?? 3000);
 
 const server = app.listen(port, () => {

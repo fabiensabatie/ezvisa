@@ -1,4 +1,5 @@
 import { ROLE_PRESETS } from "../permissions.js";
+import { REMINDER_RULES, seedBase } from "../seed-base.js";
 import { generateToken, hashToken, tokenLast4 } from "../tokens.js";
 import { runWithDb } from "./cli.js";
 
@@ -12,64 +13,9 @@ if (isProduction && !process.env.SEED_OWNER_EMAIL) {
   process.exit(1);
 }
 
-const REMINDER_RULES = [
-  {
-    kind: "STAY_ENDS" as const,
-    offsetsDays: [60, 30, 14, 7],
-    messageTemplate:
-      "Hi {first_name}, your permission to stay in Thailand ends on {deadline}, in {days_left} days. Reply here and we will start your extension. {agent_name}, EzVisa",
-  },
-  {
-    kind: "REPORT_DUE" as const,
-    offsetsDays: [14, 7, 2],
-    messageTemplate:
-      "Hi {first_name}, your 90-day report is due on {deadline}, in {days_left} days. Reply here and we will file it for you. {agent_name}, EzVisa",
-  },
-];
-
 await runWithDb(async (db) => {
-  const roles = new Map<string, string>();
-  for (const preset of ROLE_PRESETS) {
-    const role = await db.role.upsert({
-      where: { name: preset.name },
-      update: { description: preset.description, permissions: preset.permissions, isSystem: true },
-      create: {
-        name: preset.name,
-        description: preset.description,
-        permissions: preset.permissions,
-        isSystem: true,
-      },
-    });
-    roles.set(preset.name, role.id);
-  }
-
   const ownerEmail = (process.env.SEED_OWNER_EMAIL || "namtarn@ezvisa.local").toLowerCase();
-  const owner = await db.employee.upsert({
-    where: { email: ownerEmail },
-    update: {},
-    create: { name: "Namtarn", email: ownerEmail, roleId: roles.get("Owner") ?? "" },
-  });
-
-  await db.employee.upsert({
-    where: { email: "assistant@ezvisa.local" },
-    update: {},
-    create: {
-      name: "Claude",
-      email: "assistant@ezvisa.local",
-      kind: "ASSISTANT",
-      roleId: roles.get("Assistant (MCP)") ?? "",
-    },
-  });
-
-  for (const rule of REMINDER_RULES) {
-    await db.reminderRule.upsert({ where: { kind: rule.kind }, update: {}, create: rule });
-  }
-
-  await db.setting.upsert({
-    where: { key: "theme.accent" },
-    update: {},
-    create: { key: "theme.accent", value: "#EC5F9E" },
-  });
+  const { owner } = await seedBase(db, { email: ownerEmail, name: "Namtarn" });
 
   const activeTokens = await db.apiToken.count({
     where: { employeeId: owner.id, revokedAt: null },
@@ -100,6 +46,6 @@ await runWithDb(async (db) => {
   }
 
   console.log(
-    `Seeded ${ROLE_PRESETS.length} roles, the owner, the assistant, ${REMINDER_RULES.length} reminder rules and the theme.`,
+    `Seeded ${ROLE_PRESETS.length} roles, the owner, the assistant, ${REMINDER_RULES.length} reminder rules and settings.`,
   );
 });

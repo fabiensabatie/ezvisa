@@ -1,4 +1,14 @@
+import type { Context } from "@ezvisa/core";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { registerTools } from "./tool.js";
+import { caseTools } from "./tools/cases.js";
+import { clientTools, sessionTools } from "./tools/clients.js";
+import { documentTools } from "./tools/documents.js";
+import { reminderTools } from "./tools/reminders.js";
+import { teamTools } from "./tools/team.js";
+import { templateTools } from "./tools/templates.js";
+
+export { runTool } from "./tool.js";
 
 export const SERVER_NAME = "ezvisa";
 
@@ -10,12 +20,28 @@ export const INSTRUCTIONS = [
   "You may mark checklist items RECEIVED or FLAGGED. Only a person can mark an item VERIFIED or approve a pack.",
   "Every FLAGGED item needs a short reason a validator can act on, such as 'photo background is grey'.",
   "Never promise a client that an application will be approved.",
+  "Call whoami first to learn your role. Tools your role cannot use are not listed.",
 ].join("\n");
 
+export const ALL_TOOLS = [
+  ...sessionTools,
+  ...clientTools,
+  ...caseTools,
+  ...documentTools,
+  ...templateTools,
+  ...reminderTools,
+  ...teamTools,
+];
+
 /**
- * Creates the EzVisa MCP server. Tools are registered here in M1; the factory takes
- * the version so the transport layer can report the deployed build.
+ * Creates the EzVisa MCP server for one authenticated request. Only the tools
+ * the actor's role can use are registered.
  */
-export function createMcpServer(version: string): McpServer {
-  return new McpServer({ name: SERVER_NAME, version }, { instructions: INSTRUCTIONS });
+export function createMcpServer(options: { version: string; ctx: Context }): McpServer {
+  const server = new McpServer(
+    { name: SERVER_NAME, version: options.version },
+    { instructions: INSTRUCTIONS },
+  );
+  registerTools(server, options.ctx, ALL_TOOLS);
+  return server;
 }

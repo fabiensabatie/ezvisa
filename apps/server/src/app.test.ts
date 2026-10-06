@@ -23,12 +23,13 @@ afterEach(async () => {
   await Promise.all(running.splice(0).map((r) => r.close()));
 });
 
-const healthyDb = { $queryRaw: (async () => [{ ok: 1 }]) as unknown } as AppOptions["db"];
+// Only the health check touches these stubs.
+const healthyDb = { $queryRaw: async () => [{ ok: 1 }] } as unknown as AppOptions["db"];
 const brokenDb = {
   $queryRaw: (async () => {
     throw new Error("connection refused");
   }) as unknown,
-} as AppOptions["db"];
+} as unknown as AppOptions["db"];
 
 describe("GET /health", () => {
   it("returns 200 when the database answers", async () => {
