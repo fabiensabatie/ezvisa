@@ -29,7 +29,10 @@ export const ALL_TABLES = [
   "Template",
   "Client",
   "Session",
+  "OAuthAccessToken",
+  "OAuthCode",
   "ApiToken",
+  "OAuthClient",
   "Employee",
   "Role",
 ] as const;

@@ -472,7 +472,7 @@ Static bearer tokens work with clients that let you set headers, such as Claude 
 claude mcp add --transport http ezvisa https://<your-domain>/mcp --header "Authorization: Bearer ezv_live_<token>"
 ```
 
-Some clients, such as hosted connectors, expect the MCP OAuth flow instead. Supporting them is part of the "proper identification" work after the MVP.
+Hosted connectors, such as claude.ai, cannot set headers and sign in with OAuth instead (section 5.5).
 
 ### 5.4 Permissions
 
@@ -504,6 +504,20 @@ Seeded roles, matching the mockup:
 
 A Runner only views cases. The `markSubmitted` permission on its own lets a Runner move a case from `SUBMISSION` to `DONE`, record the outcome, and upload the receipt. Every service function starts with a `ctx.require(resource, level)` call. The permission matrix gets one test per role and tool.
 
+### 5.5 OAuth for MCP connectors (M4)
+
+Hosted connectors, such as claude.ai custom connectors, cannot send a static header. They use the MCP authorization flow (OAuth 2.1 with PKCE), which the server provides itself through the MCP SDK's auth router. It is on whenever `APP_URL` is set. That URL is the issuer, so it must not change while connectors are in use.
+
+1. **Discovery.** A request to `/mcp` without a valid token gets a 401 whose `WWW-Authenticate` header carries `resource_metadata="<APP_URL>/.well-known/oauth-protected-resource/mcp"` (RFC 9728). That document names the server as its own authorization server, described at `/.well-known/oauth-authorization-server` (RFC 8414).
+2. **Registration.** Connectors register themselves at `POST /register` (RFC 7591). Every client is public: no secret is issued, whatever the client asks for, and PKCE protects the code exchange. Redirect URIs must be HTTPS, HTTP on a loopback host, or an app's own scheme.
+3. **Consent.** `/authorize` needs a dashboard session. Signed-out people go to `/login?next=…`, sign in with their token as usual, and come back. The consent page names the app, the person signed in, and the host the browser returns to, so a look-alike app is easy to spot. The form is bound to the session (CSRF) and cannot be framed.
+4. **Tokens.** Approval issues a five-minute, single-use code. `POST /token` exchanges it for an access token (`ezv_at_…`, one hour) and a refresh token (`ezv_rt_…`). Refresh tokens rotate on every use, and the grant lapses after 90 days without one. Tokens are bound to `<APP_URL>/mcp`: a request for another `resource` is refused.
+5. **Identity.** The connector acts as the employee who approved it, with that person's role, and its actions are audited under their name with `via = MCP`.
+6. **The grant is an `ApiToken`.** It is linked to the `OAuthClient`, named after the app and owned by the approving employee, so it appears under Settings → Tokens as "OAuth connector". Revoking it there, deactivating the employee, or `POST /revoke` cuts the connector off on its next request. Only access tokens are accepted on `/mcp`. Refresh tokens and access tokens never open a dashboard session.
+7. **Storage.** `OAuthClient` holds registered clients. `OAuthCode` and `OAuthAccessToken` hold SHA-256 hashes only. The grant's `hash` is its current refresh token. The daily job deletes expired codes and access tokens.
+
+To connect claude.ai: Settings → Connectors → Add custom connector, URL `<APP_URL>/mcp`, no client ID or secret.
+
 ---
 
 ## 6. Server
@@ -515,6 +529,8 @@ A Runner only views cases. The `markSubmitted` permission on its own lets a Runn
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Dashboard session |
 | `/trpc/*` | Dashboard API, session cookie required |
 | `POST /mcp` | MCP Streamable HTTP endpoint, bearer token required |
+| `GET /.well-known/oauth-protected-resource/mcp`, `GET /.well-known/oauth-authorization-server` | OAuth discovery for MCP connectors (when `APP_URL` is set) |
+| `POST /register`, `GET`/`POST /authorize`, `POST /token`, `POST /revoke` | OAuth for MCP connectors: registration, consent, tokens, revocation |
 | `GET /health` | Liveness and database check for Railway |
 | `/*` | Built web app (production only) |
 
@@ -709,7 +725,7 @@ pnpm dev
 | `DATABASE_POOL_MAX` | db (optional) | Unset. Locally, `1` with `pnpm db:local`, whose Postgres mixes up queries arriving on parallel connections |
 | `S3_ENDPOINT`, `S3_REGION`, `S3_BUCKET`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | server | References to the `documents` bucket's variables |
 | `BACKUP_S3_*` (same five) | server, backup job | References to the `documents-backup` bucket |
-| `APP_URL` | server (cookies, links in messages) | The custom domain in production, the Railway domain elsewhere |
+| `APP_URL` | server (cookies, links in messages, OAuth issuer for MCP connectors) | The custom domain in production, the Railway domain elsewhere. Falls back to `https://$RAILWAY_PUBLIC_DOMAIN` when unset |
 | `SEED_OWNER_TOKEN` | seed script, non-production only | Shared variable on PR environments |
 | `NODE_ENV`, `PORT` | server | `PORT` is injected by Railway |
 
@@ -849,7 +865,13 @@ Buckets cost USD 0.015 per GB-month, with free egress and free API calls. Sixty 
 | M3 | Dashboard, write side, and reminders | Checklist updates, stage moves, uploads, template editing and publishing, the reminder job, the Reminders screen with manual send, theme and token settings. Namtarn runs her real cases on it. |
 | M4 | Next | PDF pre-fill from `fieldMap`, automatic reminder delivery (email, then WhatsApp through Twilio, then the LINE Messaging API), server-side document extraction, client portal, OAuth for hosted MCP connectors. |
 
-Status: M0 to M3 are built and tested locally. Applying the Railway configuration (M0) and running the tools from Claude Code against production (M1) wait on the Railway project.
+Status: M0 to M3 are deployed on Railway. From M4, OAuth for MCP connectors is built (section 5.5).
+
+Decisions for the rest of M4:
+
+- **Email delivery** goes through Resend, from a verified sending domain.
+- **Document extraction** sends the image or PDF to the Claude API (vision) and gets structured fields back. Staff confirm the fields before anything is saved. It needs `ANTHROPIC_API_KEY` on the server.
+- **Client portal sign-in** uses a magic link: staff send the client a personal link, by LINE, WhatsApp or email, that opens their portal without a password.
 
 M1 comes before the dashboard on purpose. Once it ships, Namtarn's data can be entered and queried through Claude while the screens are being built.
 

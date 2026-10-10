@@ -100,34 +100,84 @@ model Role {
 }
 
 model Employee {
-  id        String       @id @default(uuid(7)) @db.Uuid
-  name      String
-  email     String?      @unique
-  phone     String?
-  kind      EmployeeKind @default(HUMAN)
-  roleId    String       @db.Uuid
-  role      Role         @relation(fields: [roleId], references: [id])
-  active    Boolean      @default(true)
-  tokens    ApiToken[]
-  assigned  Case[]       @relation("assignee")
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  id         String       @id @default(uuid(7)) @db.Uuid
+  name       String
+  email      String?      @unique
+  phone      String?
+  kind       EmployeeKind @default(HUMAN)
+  roleId     String       @db.Uuid
+  role       Role         @relation(fields: [roleId], references: [id])
+  active     Boolean      @default(true)
+  tokens     ApiToken[]
+  oauthCodes OAuthCode[]
+  assigned   Case[]       @relation("assignee")
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
 }
 
 model ApiToken {
-  id         String    @id @default(uuid(7)) @db.Uuid
-  employeeId String    @db.Uuid
-  employee   Employee  @relation(fields: [employeeId], references: [id])
+  id            String             @id @default(uuid(7)) @db.Uuid
+  employeeId    String             @db.Uuid
+  employee      Employee           @relation(fields: [employeeId], references: [id])
   /// Human label, e.g. "Namtarn laptop" or "Claude Code"
-  label      String
+  label         String
   /// SHA-256 hex of the full token. The token itself is never stored.
-  hash       String    @unique
-  last4      String
-  expiresAt  DateTime?
-  revokedAt  DateTime?
-  lastUsedAt DateTime?
-  createdAt  DateTime  @default(now())
-  sessions   Session[]
+  hash          String             @unique
+  last4         String
+  expiresAt     DateTime?
+  revokedAt     DateTime?
+  lastUsedAt    DateTime?
+  createdAt     DateTime           @default(now())
+  sessions      Session[]
+  /// Set when this token is an OAuth grant to an MCP connector. The hash is then the
+  /// grant's current refresh token, replaced on every refresh.
+  oauthClientId String?
+  oauthClient   OAuthClient?       @relation(fields: [oauthClientId], references: [id], onDelete: Cascade)
+  accessTokens  OAuthAccessToken[]
+
+  @@index([oauthClientId])
+}
+
+/// An MCP connector registered through OAuth dynamic client registration. Public clients
+/// only: no secret is issued, and PKCE protects the code exchange.
+model OAuthClient {
+  /// The client_id
+  id           String      @id
+  name         String?
+  redirectUris String[]
+  /// The registered client metadata, as returned to the client
+  metadata     Json
+  createdAt    DateTime    @default(now())
+  grants       ApiToken[]
+  codes        OAuthCode[]
+}
+
+/// A single-use authorization code, valid for a few minutes.
+model OAuthCode {
+  /// SHA-256 hex of the code
+  hash          String      @id
+  clientId      String
+  client        OAuthClient @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  employeeId    String      @db.Uuid
+  employee      Employee    @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  redirectUri   String
+  codeChallenge String
+  resource      String?
+  expiresAt     DateTime
+  createdAt     DateTime    @default(now())
+}
+
+/// A short-lived access token issued under an OAuth grant (an ApiToken).
+model OAuthAccessToken {
+  /// SHA-256 hex of the token
+  hash      String   @id
+  tokenId   String   @db.Uuid
+  token     ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([tokenId])
+  @@index([expiresAt])
 }
 
 model Session {

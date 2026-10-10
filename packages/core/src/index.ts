@@ -1,5 +1,10 @@
 export { audit, toJson } from "./audit.js";
-export { authenticateToken, bearerToken } from "./auth.js";
+export {
+  authenticateAccessToken,
+  authenticateBearer,
+  authenticateToken,
+  bearerToken,
+} from "./auth.js";
 export {
   type Actor,
   type Context,
@@ -49,10 +54,12 @@ export {
 } from "./sessions.js";
 export { MemoryStorage, S3Storage, type Storage, storageFromEnv } from "./storage.js";
 export {
+  ACCESS_TOKEN_PREFIX,
   generateToken,
   hashToken,
   looksLikeToken,
   maskToken,
+  REFRESH_TOKEN_PREFIX,
   TOKEN_PREFIX,
   tokenLast4,
 } from "./tokens.js";

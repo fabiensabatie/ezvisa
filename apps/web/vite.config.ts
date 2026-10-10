@@ -17,6 +17,12 @@ export default defineConfig({
       "/auth": api,
       "/mcp": api,
       "/health": api,
+      // OAuth for MCP connectors.
+      "/.well-known": api,
+      "/authorize": api,
+      "/token": api,
+      "/register": api,
+      "/revoke": api,
     },
   },
 });

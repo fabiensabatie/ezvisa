@@ -1,5 +1,5 @@
 import {
-  authenticateToken,
+  authenticateBearer,
   bearerToken,
   type Context,
   hashToken,
@@ -18,6 +18,8 @@ export type McpRouteOptions = {
   now?: () => Date;
   /** Requests per minute per token (or per IP without a token). */
   rateLimit?: number;
+  /** OAuth protected resource metadata, advertised on 401 so connectors can sign in. */
+  resourceMetadataUrl?: string;
 };
 
 function jsonRpcError(res: Response, status: number, code: number, message: string) {
@@ -26,7 +28,8 @@ function jsonRpcError(res: Response, status: number, code: number, message: stri
 
 /**
  * POST /mcp, stateless Streamable HTTP. Every request is authenticated from its bearer
- * token and gets its own MCP server scoped to that actor's role.
+ * token (a personal ezv_live_ token or an OAuth ezv_at_ access token) and gets its own
+ * MCP server scoped to that actor's role.
  */
 export function mcpRouter(options: McpRouteOptions): Router {
   const now = options.now ?? (() => new Date());
@@ -44,10 +47,15 @@ export function mcpRouter(options: McpRouteOptions): Router {
 
     let ctx: Context;
     try {
-      const actor = await authenticateToken(options.db, token ?? "", now());
+      const actor = await authenticateBearer(options.db, token ?? "", now());
       ctx = { actor, via: "MCP", db: options.db, storage: options.storage, now };
     } catch {
-      res.setHeader("WWW-Authenticate", 'Bearer realm="ezvisa"');
+      const challenge = ['Bearer realm="ezvisa"'];
+      if (token) challenge.push('error="invalid_token"');
+      if (options.resourceMetadataUrl) {
+        challenge.push(`resource_metadata="${options.resourceMetadataUrl}"`);
+      }
+      res.setHeader("WWW-Authenticate", challenge.join(", "));
       jsonRpcError(
         res,
         401,

@@ -1,18 +1,22 @@
 import { createHash, randomInt } from "node:crypto";
 
 export const TOKEN_PREFIX = "ezv_live_";
+/** OAuth access tokens, short-lived, issued to MCP connectors. */
+export const ACCESS_TOKEN_PREFIX = "ezv_at_";
+/** OAuth refresh tokens. Only accepted by the token endpoint, never as a bearer token. */
+export const REFRESH_TOKEN_PREFIX = "ezv_rt_";
 
 const ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";
 /** 43 base62 characters carry just over 256 bits of entropy. */
 const TOKEN_BODY_LENGTH = 43;
 
 /** Generates a new access token. Show it once, store only its hash. */
-export function generateToken(): string {
+export function generateToken(prefix = TOKEN_PREFIX): string {
   let body = "";
   for (let i = 0; i < TOKEN_BODY_LENGTH; i++) {
     body += ALPHABET[randomInt(ALPHABET.length)];
   }
-  return TOKEN_PREFIX + body;
+  return prefix + body;
 }
 
 /** SHA-256 hex digest, the only form of a token kept in the database. */

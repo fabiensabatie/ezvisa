@@ -29,6 +29,12 @@ function Bloom({ className, petal, center }: { className: string; petal: string;
   );
 }
 
+/** After sign-in, an OAuth consent request (from an MCP connector) resumes on the server. */
+function oauthReturnPath(): string | null {
+  const next = new URLSearchParams(window.location.search).get("next");
+  return next?.startsWith("/authorize?") ? next : null;
+}
+
 function LoginForm() {
   const [token, setToken] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +57,11 @@ function LoginForm() {
     }
     setToken("");
     queryClient.clear();
+    const next = oauthReturnPath();
+    if (next) {
+      window.location.assign(next);
+      return;
+    }
     await navigate({ to: "/" });
   }
 
@@ -77,7 +88,11 @@ function LoginForm() {
           </div>
         </div>
         <h1 className="mt-8 font-display text-3xl font-semibold">Welcome back</h1>
-        <p className="mt-2 text-text-soft">Sign in with your access token to open today’s cases.</p>
+        <p className="mt-2 text-text-soft">
+          {oauthReturnPath()
+            ? "Sign in with your access token to connect an app to EzVisa."
+            : "Sign in with your access token to open today’s cases."}
+        </p>
 
         <form onSubmit={submit} className="mt-6 flex flex-col gap-2.5" noValidate>
           <label htmlFor="token" className="text-sm font-extrabold">
