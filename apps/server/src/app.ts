@@ -15,6 +15,7 @@ import { authRouter } from "./auth.js";
 import { readCookie } from "./cookies.js";
 import { devStorageRouter } from "./dev-storage.js";
 import { mcpRouter } from "./mcp.js";
+import { oauthRouter, resourceMetadataUrl } from "./oauth.js";
 import { appRouter } from "./router.js";
 
 export type AppOptions = {
@@ -31,9 +32,16 @@ export type AppOptions = {
   secureCookies?: boolean;
   /** Dashboard origins allowed to PUT to local storage links (development only). */
   uploadOrigins?: string[];
+  /**
+   * The public origin people and connectors reach, e.g. https://app.example.com. Enables
+   * OAuth for MCP connectors; without it, /mcp accepts personal tokens only.
+   */
+  publicUrl?: string;
 };
 
-const API_PREFIXES = ["/trpc", "/auth", "/mcp", "/health", LOCAL_STORAGE_PATH];
+const API_PREFIXES = ["/trpc", "/auth", "/mcp", "/health", "/.well-known", LOCAL_STORAGE_PATH];
+/** OAuth endpoints served by the MCP SDK at the root. */
+const API_PATHS = new Set(["/authorize", "/token", "/register", "/revoke"]);
 
 export function createApp({
   db,
@@ -45,7 +53,9 @@ export function createApp({
   loginRateLimit,
   secureCookies = process.env.NODE_ENV === "production",
   uploadOrigins = [],
+  publicUrl,
 }: AppOptions): Express {
+  const origin = publicUrl?.replace(/\/+$/, "");
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
@@ -60,7 +70,17 @@ export function createApp({
   });
 
   app.use(authRouter({ db, now, secureCookies, loginRateLimit }));
-  app.use(mcpRouter({ db, storage, version, now, rateLimit: mcpRateLimit }));
+  if (origin) app.use(oauthRouter({ db, publicUrl: origin, now }));
+  app.use(
+    mcpRouter({
+      db,
+      storage,
+      version,
+      now,
+      rateLimit: mcpRateLimit,
+      resourceMetadataUrl: origin ? resourceMetadataUrl(origin) : undefined,
+    }),
+  );
   if (storage instanceof LocalDiskStorage) app.use(devStorageRouter(storage, uploadOrigins));
 
   app.use(
@@ -91,7 +111,9 @@ export function createApp({
     );
     // Single-page app: unknown non-API paths return index.html.
     app.get("/{*path}", (req, res, next) => {
-      if (API_PREFIXES.some((prefix) => req.path.startsWith(prefix))) return next();
+      if (API_PATHS.has(req.path) || API_PREFIXES.some((prefix) => req.path.startsWith(prefix))) {
+        return next();
+      }
       res.setHeader("Cache-Control", "no-cache");
       // `root` keeps the dot-file check on the relative path only, so a checkout under a
       // dot-folder (such as .claude/worktrees) still serves the page.

@@ -212,7 +212,9 @@ function Tokens({ myTokenId }: { myTokenId: string | undefined }) {
                         {t.label}
                         {t.id === myTokenId && <Chip className="ml-2">This browser</Chip>}
                       </td>
-                      <td className="px-3 py-3 font-mono text-text-soft">{t.token}</td>
+                      <td className={`px-3 py-3 text-text-soft ${t.connector ? "" : "font-mono"}`}>
+                        {t.token}
+                      </td>
                       <td className="px-3 py-3 text-text-soft">
                         {t.lastUsedAt ? timeAgo(t.lastUsedAt) : "Never"}
                       </td>

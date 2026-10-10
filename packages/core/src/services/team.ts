@@ -154,6 +154,7 @@ export async function deactivateEmployee(
       data: { revokedAt: now },
     });
     await tx.session.deleteMany({ where: { tokenId: { in: tokens.map((t) => t.id) } } });
+    await tx.oAuthAccessToken.deleteMany({ where: { tokenId: { in: tokens.map((t) => t.id) } } });
     await tx.case.updateMany({
       where: { assigneeId: employeeId, stage: { notIn: ["DONE", "CANCELLED"] } },
       data: { assigneeId: null },
@@ -339,6 +340,7 @@ export async function revokeToken(ctx: Context, raw: z.input<typeof revokeTokenI
       include: { employee: true },
     });
     const sessions = await tx.session.deleteMany({ where: { tokenId } });
+    await tx.oAuthAccessToken.deleteMany({ where: { tokenId } });
     await audit(tx, ctx, {
       action: "token.revoked",
       entity: "ApiToken",

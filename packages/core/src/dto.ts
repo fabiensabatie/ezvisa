@@ -78,7 +78,9 @@ export function tokenDto(t: ApiToken & { employee: Employee }, now: Date) {
     id: t.id,
     employee: { id: t.employee.id, name: t.employee.name },
     label: t.label,
-    token: maskToken(t.last4),
+    // An OAuth grant has no token a person ever sees: its hash is the connector's refresh token.
+    token: t.oauthClientId ? "OAuth connector" : maskToken(t.last4),
+    connector: t.oauthClientId !== null,
     status,
     createdAt: iso(t.createdAt),
     lastUsedAt: iso(t.lastUsedAt),

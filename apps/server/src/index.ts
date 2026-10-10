@@ -56,11 +56,21 @@ if (storage instanceof S3Storage && uploadOrigins.length > 0) {
     );
 }
 
+// The origin people and MCP connectors use. It issues OAuth tokens, so it must be stable.
+const publicUrl =
+  process.env.APP_URL?.trim() || (publicDomain ? `https://${publicDomain}` : undefined);
+if (!publicUrl) {
+  console.log(
+    JSON.stringify({ level: "warn", msg: "APP_URL not set: OAuth for MCP connectors is off" }),
+  );
+}
+
 const app = createApp({
   db,
   version,
   storage,
   uploadOrigins,
+  publicUrl,
   webDir: production ? webDir : undefined,
 });
 
