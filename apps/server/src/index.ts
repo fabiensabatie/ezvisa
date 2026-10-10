@@ -29,11 +29,28 @@ if (!storage && !production) {
   console.log(JSON.stringify({ level: "warn", msg: "S3_* not set: document storage is disabled" }));
 }
 
+// Railway can prefill variables from .env.example, whose APP_URL is the local Vite server.
+// In production that value would break OAuth and uploads, so it is ignored with a warning.
+const configuredUrl = process.env.APP_URL?.trim() || undefined;
+const loopbackUrl =
+  configuredUrl !== undefined &&
+  /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(configuredUrl);
+if (production && loopbackUrl) {
+  console.log(
+    JSON.stringify({
+      level: "warn",
+      msg: "APP_URL points to localhost in production and is ignored",
+      appUrl: configuredUrl,
+    }),
+  );
+}
+const appUrl = production && loopbackUrl ? undefined : configuredUrl;
+
 // Browsers upload straight to the bucket, so it must accept PUTs from the dashboard.
 const publicDomain = process.env.RAILWAY_PUBLIC_DOMAIN;
 const uploadOrigins = [
   ...new Set(
-    [process.env.APP_URL ?? (production ? undefined : "http://localhost:5173")]
+    [appUrl ?? (production ? undefined : "http://localhost:5173")]
       .concat(publicDomain ? [`https://${publicDomain}`] : [])
       .filter((origin): origin is string => Boolean(origin))
       .map((origin) => origin.replace(/\/$/, "")),
@@ -57,8 +74,7 @@ if (storage instanceof S3Storage && uploadOrigins.length > 0) {
 }
 
 // The origin people and MCP connectors use. It issues OAuth tokens, so it must be stable.
-const publicUrl =
-  process.env.APP_URL?.trim() || (publicDomain ? `https://${publicDomain}` : undefined);
+const publicUrl = appUrl ?? (publicDomain ? `https://${publicDomain}` : undefined);
 if (!publicUrl) {
   console.log(
     JSON.stringify({ level: "warn", msg: "APP_URL not set: OAuth for MCP connectors is off" }),
