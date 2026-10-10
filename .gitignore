@@ -141,3 +141,12 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# EzVisa monorepo
+!.env.example
+.turbo/
+packages/db/src/generated/
+*.tsbuildinfo
+
+# Local development storage (documents uploaded without an S3 bucket)
+.data/

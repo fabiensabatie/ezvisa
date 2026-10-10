@@ -1,0 +1,36 @@
+{
+  "name": "ezvisa-mono",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@12.9.1",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck && tsc -p tsconfig.json",
+    "test": "turbo run test",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "db:migrate": "pnpm --filter @ezvisa/db migrate:dev",
+    "db:deploy": "pnpm --filter @ezvisa/db migrate:deploy",
+    "db:studio": "pnpm --filter @ezvisa/db studio",
+    "db:seed": "pnpm --filter @ezvisa/core seed",
+    "db:sample": "pnpm --filter @ezvisa/core sample",
+    "db:local": "pnpm --filter @ezvisa/db exec prisma dev --name ezvisa",
+    "token:create": "pnpm --filter @ezvisa/core token:create",
+    "token:list": "pnpm --filter @ezvisa/core token:list",
+    "token:revoke": "pnpm --filter @ezvisa/core token:revoke",
+    "job:daily": "pnpm --filter @ezvisa/core job:daily",
+    "infra:plan": "railway config plan"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.15",
+    "@ezvisa/config": "workspace:*",
+    "@types/node": "^26.6.4",
+    "railway": "^3.13.0",
+    "turbo": "^2.11.7",
+    "typescript": "^7.0.2"
+  }
+}

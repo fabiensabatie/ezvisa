@@ -1,0 +1,362 @@
+// EzVisa data model. See docs/04-mvp-spec.md section 4 for the rules this schema alone does not enforce.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EmployeeKind {
+  HUMAN
+  ASSISTANT
+}
+
+enum Channel {
+  LINE
+  WHATSAPP
+  MESSENGER
+  EMAIL
+  PHONE
+}
+
+enum CaseStage {
+  NEW
+  COLLECTING
+  DRAFTING
+  VALIDATION
+  SUBMISSION
+  DONE
+  CANCELLED
+}
+
+enum CaseOutcome {
+  APPROVED
+  REJECTED
+  MORE_DOCUMENTS
+  WITHDRAWN
+}
+
+enum ItemKind {
+  DOCUMENT
+  FORM
+  PAYMENT
+  OTHER
+}
+
+enum ItemStatus {
+  MISSING
+  RECEIVED
+  VERIFIED
+  FLAGGED
+  WAIVED
+}
+
+enum FileKind {
+  PDF_FORM
+  LETTER
+  REFERENCE
+}
+
+enum VersionStatus {
+  DRAFT
+  PUBLISHED
+  RETIRED
+}
+
+enum DeadlineKind {
+  STAY_ENDS
+  REPORT_DUE
+}
+
+enum ReminderStatus {
+  SCHEDULED
+  DUE
+  SENT
+  SKIPPED
+  CANCELLED
+}
+
+enum Via {
+  DASHBOARD
+  MCP
+  SYSTEM
+}
+
+model Role {
+  id          String     @id @default(uuid(7)) @db.Uuid
+  name        String     @unique
+  description String?
+  /// Shape: Permissions in @ezvisa/core (permissions.ts)
+  permissions Json
+  isSystem    Boolean    @default(false)
+  employees   Employee[]
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+}
+
+model Employee {
+  id        String       @id @default(uuid(7)) @db.Uuid
+  name      String
+  email     String?      @unique
+  phone     String?
+  kind      EmployeeKind @default(HUMAN)
+  roleId    String       @db.Uuid
+  role      Role         @relation(fields: [roleId], references: [id])
+  active    Boolean      @default(true)
+  tokens    ApiToken[]
+  assigned  Case[]       @relation("assignee")
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+}
+
+model ApiToken {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  employeeId String    @db.Uuid
+  employee   Employee  @relation(fields: [employeeId], references: [id])
+  /// Human label, e.g. "Namtarn laptop" or "Claude Code"
+  label      String
+  /// SHA-256 hex of the full token. The token itself is never stored.
+  hash       String    @unique
+  last4      String
+  expiresAt  DateTime?
+  revokedAt  DateTime?
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+  sessions   Session[]
+}
+
+model Session {
+  /// 32 random bytes, base64url
+  id        String   @id
+  tokenId   String   @db.Uuid
+  token     ApiToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([tokenId])
+}
+
+model Client {
+  id            String     @id @default(uuid(7)) @db.Uuid
+  fullName      String
+  /// ISO 3166-1 alpha-2
+  nationality   String
+  passportNo    String?
+  dateOfBirth   DateTime?  @db.Date
+  email         String?
+  phone         String?
+  channel       Channel    @default(LINE)
+  channelHandle String?
+  address       String?
+  /// Free text for now, e.g. "Non-O retirement", "DTV"
+  visaType      String?
+  stayUntil     DateTime?  @db.Date
+  nextReportDue DateTime?  @db.Date
+  notes         String?
+  /// PDPA consent captured at intake. Documents cannot be uploaded before it is set.
+  consentAt     DateTime?
+  cases         Case[]
+  documents     Document[]
+  reminders     Reminder[]
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
+
+  @@index([stayUntil])
+  @@index([nextReportDue])
+}
+
+model Template {
+  id           String            @id @default(uuid(7)) @db.Uuid
+  /// e.g. "retirement-extension"
+  slug         String            @unique
+  name         String
+  description  String?
+  office       String            @default("Chiang Mai Immigration")
+  /// Which client deadline a case of this type resolves, for reminders
+  deadlineKind DeadlineKind?
+  archivedAt   DateTime?
+  versions     TemplateVersion[]
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+}
+
+model TemplateVersion {
+  id            String         @id @default(uuid(7)) @db.Uuid
+  templateId    String         @db.Uuid
+  template      Template       @relation(fields: [templateId], references: [id])
+  version       Int
+  status        VersionStatus  @default(DRAFT)
+  knownFailures String[]
+  notes         String?
+  publishedAt   DateTime?
+  publishedById String?        @db.Uuid
+  items         TemplateItem[]
+  files         TemplateFile[]
+  cases         Case[]
+  createdAt     DateTime       @default(now())
+
+  @@unique([templateId, version])
+}
+
+model TemplateItem {
+  id          String          @id @default(uuid(7)) @db.Uuid
+  versionId   String          @db.Uuid
+  version     TemplateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  position    Int
+  label       String
+  description String?
+  kind        ItemKind        @default(DOCUMENT)
+  required    Boolean         @default(true)
+  /// e.g. { "maxAgeDays": 7 } for a bank letter
+  rules       Json?
+  formFileId  String?         @db.Uuid
+  formFile    TemplateFile?   @relation(fields: [formFileId], references: [id])
+
+  @@index([versionId])
+}
+
+model TemplateFile {
+  id         String          @id @default(uuid(7)) @db.Uuid
+  versionId  String          @db.Uuid
+  version    TemplateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  name       String
+  kind       FileKind
+  /// Shared between versions: a new draft copies the rows, not the objects
+  storageKey String
+  mimeType   String
+  sizeBytes  Int
+  /// Reserved for PDF pre-fill (roadmap)
+  fieldMap   Json?
+  items      TemplateItem[]
+
+  @@index([versionId])
+  @@index([storageKey])
+}
+
+model Case {
+  id                String          @id @default(uuid(7)) @db.Uuid
+  /// Displayed as EZ-<number>. The sequence starts at 1000 (see the init migration).
+  number            Int             @unique @default(autoincrement())
+  clientId          String          @db.Uuid
+  client            Client          @relation(fields: [clientId], references: [id])
+  templateVersionId String          @db.Uuid
+  templateVersion   TemplateVersion @relation(fields: [templateVersionId], references: [id])
+  stage             CaseStage       @default(NEW)
+  outcome           CaseOutcome?
+  assigneeId        String?         @db.Uuid
+  assignee          Employee?       @relation("assignee", fields: [assigneeId], references: [id])
+  dueDate           DateTime?       @db.Date
+  notes             String?
+  items             CaseItem[]
+  documents         Document[]
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  closedAt          DateTime?
+
+  @@index([stage])
+  @@index([assigneeId])
+  @@index([clientId])
+}
+
+model CaseItem {
+  id             String        @id @default(uuid(7)) @db.Uuid
+  caseId         String        @db.Uuid
+  case           Case          @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  templateItemId String?       @db.Uuid
+  position       Int
+  label          String
+  kind           ItemKind
+  required       Boolean
+  status         ItemStatus    @default(MISSING)
+  /// Mandatory when FLAGGED or WAIVED
+  note           String?
+  flaggedByKind  EmployeeKind?
+  updatedById    String?       @db.Uuid
+  documents      Document[]
+  updatedAt      DateTime      @updatedAt
+
+  @@index([caseId])
+}
+
+model Document {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  clientId     String    @db.Uuid
+  client       Client    @relation(fields: [clientId], references: [id])
+  caseId       String?   @db.Uuid
+  case         Case?     @relation(fields: [caseId], references: [id])
+  caseItemId   String?   @db.Uuid
+  caseItem     CaseItem? @relation(fields: [caseItemId], references: [id])
+  filename     String
+  mimeType     String
+  sizeBytes    Int
+  sha256       String
+  storageKey   String    @unique
+  /// Fields an assistant read from the document
+  extracted    Json?
+  uploadedById String?   @db.Uuid
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  @@index([clientId])
+  @@index([caseId])
+}
+
+model ReminderRule {
+  id              String       @id @default(uuid(7)) @db.Uuid
+  kind            DeadlineKind @unique
+  /// e.g. STAY_ENDS [60, 30, 14, 7]
+  offsetsDays     Int[]
+  /// Variables: {first_name}, {deadline}, {days_left}, {agent_name}
+  messageTemplate String
+  active          Boolean      @default(true)
+  updatedAt       DateTime     @updatedAt
+}
+
+model Reminder {
+  id         String         @id @default(uuid(7)) @db.Uuid
+  clientId   String         @db.Uuid
+  client     Client         @relation(fields: [clientId], references: [id])
+  kind       DeadlineKind
+  deadline   DateTime       @db.Date
+  offsetDays Int
+  sendOn     DateTime       @db.Date
+  status     ReminderStatus @default(SCHEDULED)
+  channel    Channel
+  /// Rendered text, frozen when sent
+  message    String?
+  sentAt     DateTime?
+  sentById   String?        @db.Uuid
+  createdAt  DateTime       @default(now())
+
+  @@unique([clientId, kind, deadline, offsetDays])
+  @@index([status, sendOn])
+}
+
+model Setting {
+  /// e.g. "theme.accent"
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+model AuditLog {
+  id       BigInt   @id @default(autoincrement())
+  at       DateTime @default(now())
+  actorId  String?  @db.Uuid
+  via      Via
+  /// e.g. "case.stage_changed", "document.read"
+  action   String
+  entity   String
+  entityId String
+  before   Json?
+  after    Json?
+
+  @@index([entity, entityId])
+  @@index([at])
+}

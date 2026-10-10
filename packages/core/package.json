@@ -1,0 +1,43 @@
+{
+  "name": "@ezvisa/core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "@ezvisa/source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./testing": {
+      "@ezvisa/source": "./src/testing.ts",
+      "types": "./dist/testing.d.ts",
+      "default": "./dist/testing.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "seed": "tsx --conditions=@ezvisa/source src/scripts/seed.ts",
+    "token:create": "tsx --conditions=@ezvisa/source src/scripts/token-create.ts",
+    "token:list": "tsx --conditions=@ezvisa/source src/scripts/token-list.ts",
+    "token:revoke": "tsx --conditions=@ezvisa/source src/scripts/token-revoke.ts",
+    "sample": "tsx --conditions=@ezvisa/source src/scripts/sample.ts",
+    "job:daily": "tsx --conditions=@ezvisa/source src/scripts/daily.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1146.0",
+    "@aws-sdk/s3-request-presigner": "^3.1146.0",
+    "@ezvisa/db": "workspace:*",
+    "dotenv": "^18.0.5",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@ezvisa/config": "workspace:*",
+    "@types/node": "^26.6.4",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.0.3"
+  }
+}

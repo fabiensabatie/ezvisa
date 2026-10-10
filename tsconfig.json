@@ -1,0 +1,8 @@
+{
+  "//": "Type-checks the Railway infrastructure file. Each package has its own tsconfig.",
+  "extends": "./packages/config/tsconfig.node.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": [".railway/railway.ts"]
+}

@@ -1,0 +1,31 @@
+name: ezvisa
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: ezvisa
+      POSTGRES_PASSWORD: ezvisa
+      POSTGRES_DB: ezvisa
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Creates the ezvisa_test database used by integration tests (first start only).
+      - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ezvisa"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Local S3-compatible storage. Data is not kept between restarts.
+  s3:
+    image: adobe/s3mock:5.2.3
+    environment:
+      COM_ADOBE_TESTING_S3MOCK_STORE_INITIAL_BUCKETS: ezvisa-documents,ezvisa-documents-backup
+    ports:
+      - "9090:9090"
+
+volumes:
+  postgres-data:
