@@ -223,21 +223,21 @@ model Session {
 }
 
 model Client {
-  id            String     @id @default(uuid(7)) @db.Uuid
+  id            String        @id @default(uuid(7)) @db.Uuid
   fullName      String
   /// ISO 3166-1 alpha-2
   nationality   String
   passportNo    String?
-  dateOfBirth   DateTime?  @db.Date
+  dateOfBirth   DateTime?     @db.Date
   email         String?
   phone         String?
-  channel       Channel    @default(LINE)
+  channel       Channel       @default(LINE)
   channelHandle String?
   address       String?
   /// Free text for now, e.g. "Non-O retirement", "DTV"
   visaType      String?
-  stayUntil     DateTime?  @db.Date
-  nextReportDue DateTime?  @db.Date
+  stayUntil     DateTime?     @db.Date
+  nextReportDue DateTime?     @db.Date
   notes         String?
   /// PDPA consent captured at intake. Documents cannot be uploaded before it is set.
   consentAt     DateTime?
@@ -245,8 +245,8 @@ model Client {
   documents     Document[]
   reminders     Reminder[]
   chatContacts  ChatContact[]
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
   deletedAt     DateTime?
 
   @@index([stayUntil])
@@ -420,38 +420,45 @@ model Agent {
 /// A link a client opens, without signing in, to upload the documents their case needs.
 /// Only the SHA-256 of the secret is stored; the secret travels in the URL fragment.
 model CaseShareLink {
-  id          String    @id @default(uuid(7)) @db.Uuid
-  caseId      String    @db.Uuid
-  case        Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  hash        String    @unique
-  createdById String    @db.Uuid
-  expiresAt   DateTime
-  revokedAt   DateTime?
-  lastUsedAt  DateTime?
-  uploads     Int       @default(0)
-  createdAt   DateTime  @default(now())
+  id           String     @id @default(uuid(7)) @db.Uuid
+  caseId       String     @db.Uuid
+  case         Case       @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  hash         String     @unique
+  createdById  String     @db.Uuid
+  expiresAt    DateTime
+  revokedAt    DateTime?
+  lastUsedAt   DateTime?
+  uploads      Int        @default(0)
+  /// Wrong dates of birth when opening the uploaded files; three in a day lock viewing
+  viewFailures Int        @default(0)
+  viewFailedAt DateTime?
+  documents    Document[]
+  createdAt    DateTime   @default(now())
 
   @@index([caseId])
 }
 
 model Document {
-  id           String    @id @default(uuid(7)) @db.Uuid
-  clientId     String    @db.Uuid
-  client       Client    @relation(fields: [clientId], references: [id])
-  caseId       String?   @db.Uuid
-  case         Case?     @relation(fields: [caseId], references: [id])
-  caseItemId   String?   @db.Uuid
-  caseItem     CaseItem? @relation(fields: [caseItemId], references: [id])
-  filename     String
-  mimeType     String
-  sizeBytes    Int
-  sha256       String
-  storageKey   String    @unique
+  id                String         @id @default(uuid(7)) @db.Uuid
+  clientId          String         @db.Uuid
+  client            Client         @relation(fields: [clientId], references: [id])
+  caseId            String?        @db.Uuid
+  case              Case?          @relation(fields: [caseId], references: [id])
+  caseItemId        String?        @db.Uuid
+  caseItem          CaseItem?      @relation(fields: [caseItemId], references: [id])
+  filename          String
+  mimeType          String
+  sizeBytes         Int
+  sha256            String
+  storageKey        String         @unique
   /// Fields an assistant read from the document
-  extracted    Json?
-  uploadedById String?   @db.Uuid
-  createdAt    DateTime  @default(now())
-  deletedAt    DateTime?
+  extracted         Json?
+  uploadedById      String?        @db.Uuid
+  /// The checklist link the client uploaded it through. Clients see and manage only these.
+  uploadedViaLinkId String?        @db.Uuid
+  uploadedVia       CaseShareLink? @relation(fields: [uploadedViaLinkId], references: [id], onDelete: SetNull)
+  createdAt         DateTime       @default(now())
+  deletedAt         DateTime?
 
   @@index([clientId])
   @@index([caseId])

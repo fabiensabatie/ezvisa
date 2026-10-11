@@ -82,6 +82,16 @@ export const appRouter = router({
     confirmUpload: clientProcedure
       .input(uploadLinks.confirmClientUploadInput)
       .mutation(({ ctx, input }) => uploadLinks.confirmClientUpload(ctx.client, input)),
+    /** The client's own files, once their date of birth matches. */
+    files: clientProcedure
+      .input(uploadLinks.viewFilesInput)
+      .mutation(({ ctx, input }) => uploadLinks.listClientFiles(ctx.client, input)),
+    fileLink: clientProcedure
+      .input(uploadLinks.clientFileInput)
+      .mutation(({ ctx, input }) => uploadLinks.clientFileLink(ctx.client, input)),
+    removeFile: clientProcedure
+      .input(uploadLinks.removeClientFileInput)
+      .mutation(({ ctx, input }) => uploadLinks.removeClientFile(ctx.client, input)),
   }),
 
   clients: router({

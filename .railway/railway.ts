@@ -30,12 +30,14 @@ export default defineRailway(() => {
     healthcheckTimeout: 30,
     replicas: { [SINGAPORE]: 1 },
     deploy: { limitOverride: { containers: { cpu: 2, memoryBytes: 2_000_000_000 } } },
-    // The service answers on its Railway domain. Add the custom domain here once it is
-    // chosen; APP_URL then changes with it and MCP connectors must be connected again.
+    // People, clients' checklist links and MCP connectors use the custom domain. The Railway
+    // domain still answers, but APP_URL (the OAuth issuer) is the custom one: changing it
+    // means connecting MCP connectors again.
+    networking: { customDomains: { "app.ezvisa.business": { port: 3000 } } },
     env: {
       NODE_ENV: "production",
       PORT: "3000",
-      APP_URL: "https://${{RAILWAY_PUBLIC_DOMAIN}}",
+      APP_URL: "https://app.ezvisa.business",
       DATABASE_URL: db.env.DATABASE_URL,
       S3_ENDPOINT: "${{documents.ENDPOINT}}",
       S3_REGION: "${{documents.REGION}}",

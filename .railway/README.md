@@ -11,7 +11,7 @@ The project also runs services from other repositories. `railway.ts` therefore e
 | `Postgres` | The database. Services reach it over the private network. |
 | `documents` | Client documents and template forms. The `documents-backup` bucket (spec 12.6) is added together with the nightly backup job. |
 
-Variables point at the resources through references (`${{Postgres.DATABASE_URL}}`, `${{documents.ENDPOINT}}`…), so no secret is written in this repository. `APP_URL` is also the OAuth issuer: change it only when moving to a custom domain, and connect MCP connectors again afterwards.
+Variables point at the resources through references (`${{Postgres.DATABASE_URL}}`, `${{documents.ENDPOINT}}`…), so no secret is written in this repository. EzVisa answers at **https://app.ezvisa.business** (a custom domain on `ezvisa`; the Railway domain still works). `APP_URL` is that address: links sent to clients, such as checklist links, use it, and it is the OAuth issuer for MCP connectors, so changing it means connecting them again.
 
 ## The shared inbox: project ezvisa-chat
 

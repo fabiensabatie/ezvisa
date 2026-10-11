@@ -15,9 +15,12 @@ import { createTemplate, publishTemplateVersion } from "./templates.js";
 import {
   acceptPrivacyNotice,
   type ClientContext,
+  clientFileLink,
   confirmClientUpload,
   createClientUpload,
   createUploadLink,
+  listClientFiles,
+  removeClientFile,
   revokeUploadLink,
   viewUploadPage,
 } from "./upload-links.js";
@@ -212,5 +215,98 @@ describe.skipIf(!url)("client upload links", () => {
     await expect(createUploadLink(staff, { case: kase.number })).rejects.toMatchObject({
       code: "CONFLICT",
     });
+  });
+
+  it("shows the client their own files once their date of birth matches, and lets them remove one until it is checked", async () => {
+    const kase = await openCase();
+    const secret = secretOf(await createUploadLink(staff, { case: kase.number }));
+    const passport = kase.items[0]?.id ?? "";
+    const photos = kase.items[1]?.id ?? "";
+    await acceptPrivacyNotice(visitor, { secret });
+    const send = async (itemId: string, filename: string) => {
+      const upload = await createClientUpload(visitor, {
+        secret,
+        itemId,
+        filename,
+        mimeType: "image/jpeg",
+        sizeBytes: 4,
+      });
+      await storage.put(upload.uploadKey, new Uint8Array([1, 2, 3, 4]), "image/jpeg");
+      return confirmClientUpload(visitor, {
+        secret,
+        itemId,
+        uploadKey: upload.uploadKey,
+        filename,
+        mimeType: "image/jpeg",
+      });
+    };
+    await send(passport, "passport.jpg");
+    await send(photos, "photo.jpg");
+    // A document the team stored on the case is never shown on the client's page.
+    await db.document.create({
+      data: {
+        clientId: kase.client.id,
+        caseId: kase.id,
+        filename: "internal-notes.pdf",
+        mimeType: "application/pdf",
+        sizeBytes: 10,
+        sha256: "x",
+        storageKey: "clients/internal-notes.pdf",
+        uploadedById: staff.actor.employeeId,
+      },
+    });
+    const view = (dateOfBirth: string) => listClientFiles(visitor, { secret, dateOfBirth });
+
+    expect((await viewUploadPage(visitor, { secret })).canViewFiles).toBe(false);
+    await expect(view("1960-04-02")).rejects.toMatchObject({ code: "CONFLICT" });
+    await db.client.update({
+      where: { id: kase.client.id },
+      data: { dateOfBirth: new Date("1960-04-02T00:00:00.000Z") },
+    });
+    expect((await viewUploadPage(visitor, { secret })).canViewFiles).toBe(true);
+
+    await expect(view("1961-04-02")).rejects.toThrow("2 tries left");
+    const files = await view("1960-04-02");
+    expect(files.items.map((i) => [i.label, i.files.map((f) => f.filename)])).toEqual([
+      ["Passport", ["passport.jpg"]],
+      ["Two photos", ["photo.jpg"]],
+    ]);
+
+    const passportFile = files.items[0]?.files[0]?.id ?? "";
+    const opened = await clientFileLink(visitor, {
+      secret,
+      dateOfBirth: "1960-04-02",
+      documentId: passportFile,
+    });
+    expect(opened.url).toContain("disposition=inline");
+    const reads = await db.auditLog.findMany({ where: { via: "CLIENT", action: "document.read" } });
+    expect(reads.map((r) => r.entityId)).toEqual([passportFile]);
+
+    // Once the team has checked an item, the client can no longer change its files.
+    await updateCaseItem(staff, { case: kase.number, itemId: photos, status: "VERIFIED" });
+    const photoFile = files.items[1]?.files[0]?.id ?? "";
+    await expect(
+      removeClientFile(visitor, { secret, dateOfBirth: "1960-04-02", documentId: photoFile }),
+    ).rejects.toThrow("already checked");
+
+    // Removing the only file of a received item sends it back to missing.
+    const removed = await removeClientFile(visitor, {
+      secret,
+      dateOfBirth: "1960-04-02",
+      documentId: passportFile,
+    });
+    expect(removed.page.items[0]).toMatchObject({ label: "Passport", state: "needed" });
+    expect(removed.files.items[0]?.files).toEqual([]);
+    const detail = await getCase(staff, { case: kase.number });
+    expect(detail.items[0]).toMatchObject({
+      status: "MISSING",
+      note: "The client removed their upload.",
+    });
+
+    // Three wrong dates lock viewing for the day, even with the right date afterwards.
+    for (const wrong of ["1990-01-01", "1990-01-02"])
+      await expect(view(wrong)).rejects.toThrow("left");
+    await expect(view("1990-01-03")).rejects.toThrow("locked until tomorrow");
+    await expect(view("1960-04-02")).rejects.toMatchObject({ code: "FORBIDDEN" });
   });
 });

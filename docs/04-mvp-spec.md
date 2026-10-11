@@ -632,7 +632,13 @@ An employee shares the client's part of a checklist in one click: "Share checkli
 - Which items appear is set on the template: each checklist item has "The client uploads it" (`clientUpload`). New DOCUMENT items default to it; forms and information items do not. Cases copy the setting when they open.
 - The link is `<APP_URL>/upload#<secret>`: 32 random bytes, base64url. The secret sits in the URL fragment, which browsers never send to a server, and travels in POST bodies, so it stays out of request logs. Only its SHA-256 is stored.
 - It is shown once, with a message ready to paste into the client's chat. Sharing again replaces the previous link. It expires after 1 to 60 days (14 by default), stops when the case closes, and can be revoked at any time.
-- The page shows the agency's name and colour, the client's first name and the requested items with their state: needed, please send a new copy (FLAGGED), received, done. It never shows or serves a stored document.
+- The page shows the agency's name and colour, the client's first name and the requested items with their state: needed, please send a new copy (FLAGGED), received, done.
+- **The client's own files.** Uploading needs only the link. Seeing files needs the client's date of birth as well, which the client enters once per visit; the page keeps it in memory only and sends it with each request. Once it matches:
+  - the client sees the files they uploaded through any of the case's links (`Document.uploadedViaLinkId`), never documents the team stored;
+  - they can open or save each file through a 5-minute link, audited as `document.read` with `via: CLIENT`;
+  - they can replace or remove a file until the team has verified or waived its item. Removal is a soft delete, audited. An item left with no file goes from RECEIVED back to MISSING.
+
+  Three wrong dates of birth in 24 hours lock viewing for that link. A client without a date of birth on file cannot view files there.
 - Before the first upload the client accepts the privacy notice on the page, which sets `Client.consentAt` if it was not set.
 - Each file lands as a `Document` on the case, linked to its item. A MISSING or FLAGGED item becomes RECEIVED, for a person to verify. The audit log records the client as the actor (`via: CLIENT`, no employee), and the activity feed reads "The client uploaded …".
 - Limits: 100 uploads per link, 60 requests per minute per IP, and the usual document size and type rules.
@@ -768,7 +774,7 @@ Default stay message:
 | Consent | `Client.consentAt` must be set before documents can be uploaded for that client |
 | Retention | A nightly job hard-deletes documents 12 months after their case closed, unless the client still has an open case or a future deadline. The period is a setting. |
 | Access requests | `get_client` with `include_all` exports everything held on a client, to answer PDPA access requests |
-| Client upload links | Secret in the URL fragment, stored hashed; upload only, never read; expire, revocable, replaced on re-share, dead once the case closes (section 6.5) |
+| Client upload links | Secret in the URL fragment, stored hashed. Uploading needs the link; seeing, replacing or removing the client's own files also needs their date of birth (three wrong tries lock it for a day). Links expire, can be revoked, are replaced on re-share and stop when the case closes (section 6.5) |
 | Rate limits | Login 10 per minute per IP; MCP 120 requests per minute per token; client upload page 60 per minute per IP |
 | Chat | Webhooks must be signed and less than 5 minutes old. Client agents need an identity check, and each tool call is scoped to that client, deny by default. Team agents act with no more than the linked employee's permissions. No agent can verify or approve. Conversations stay in Chatwoot in Singapore. To write each reply, the latest messages and tool results go to Anthropic's API, which the privacy notice must mention |
 | Backups | Postgres point-in-time recovery, plus a nightly copy of new documents to a second bucket (section 12.6) |
@@ -900,7 +906,7 @@ The file mirrors the live setup and is the place to change it. In short:
 
 - `export const partial = "ezvisa"`: the file owns only the resources it declares. In a project shared with other repositories, a file without a partial would delete everything it does not list.
 - `ezvisa` and `jobs` build from `fabiensabatie/ezvisa` on `main`, in Singapore. `ezvisa` runs migrations before each deploy and is gated by `/health`. `jobs` has `cronSchedule: "0 1 * * *"` and never restarts.
-- Variables are references, never values: `DATABASE_URL` is `db.env.DATABASE_URL`, the `S3_*` variables are `${{documents.ENDPOINT}}` and so on, and `APP_URL` is `https://${{RAILWAY_PUBLIC_DOMAIN}}` until a custom domain is chosen.
+- Variables are references, never values: `DATABASE_URL` is `db.env.DATABASE_URL`, the `S3_*` variables are `${{documents.ENDPOINT}}` and so on, and `APP_URL` is the custom domain, `https://app.ezvisa.business`, declared on the service.
 - The project name is the live one, so an apply never renames the shared project.
 
 The live setup was first built in the dashboard and through Railway's MCP tools. The file was then written to match it, so the first `railway config plan` should mainly claim ownership and remove a few unused hand-set variables (listed in `.railway/README.md`).
@@ -978,7 +984,7 @@ M1 comes before the dashboard on purpose. Once it ships, Namtarn's data can be e
 
 ## 14. Open questions
 
-1. **Domain.** Which domain hosts the dashboard and the MCP endpoint? The spec assumes `app.<your-domain>`.
+1. **Domain.** Settled: `app.ezvisa.business` hosts the dashboard, the client pages and the MCP endpoint.
 2. **Client identity check.** Is name plus date of birth enough before the assistant writes to a client, or should it be passport number?
 3. **90-day reports as cases.** Should every 90-day report be a case, or only a reminder plus a one-click "done" record?
 4. **Template seed.** Which three templates go in first? The mockup assumes retirement extension, DTV 180-day extension and 90-day report.

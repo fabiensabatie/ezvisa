@@ -284,12 +284,13 @@ const OUTCOMES = [
   },
 ] as const;
 
-function OutcomeDialog({
+/** Records what immigration decided on a case in Submission. Also opened from the board. */
+export function OutcomeDialog({
   c,
   open,
   onClose,
 }: {
-  c: CaseDetail;
+  c: Pick<CaseDetail, "number">;
   open: boolean;
   onClose: () => void;
 }) {

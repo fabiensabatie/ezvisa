@@ -22,7 +22,7 @@ M0 to M3 are deployed on Railway in Singapore, and M4 adds OAuth for MCP connect
 - adding clients and opening cases
 - updating the checklist and moving stages, with the guards explained
 - uploading documents and template forms straight to storage
-- sharing the checklist with a client, who uploads the requested documents from a private link without an account
+- sharing the checklist with a client, who uploads the requested documents from a private link without an account, then, after confirming their date of birth, sees, replaces or removes what they sent until the team has checked it
 - a shared inbox for LINE, Messenger and WhatsApp (self-hosted Chatwoot), worked from the dashboard's Inbox next to each client's cases
 - agents, configured in the dashboard, that answer in that inbox through EzVisa's MCP tools. Client agents register new clients, open the case their need calls for (or share the open one) and send its checklist, on the identified client's records only. Team agents work with the linked colleague's permissions ([docs/05-chat-inbox.md](docs/05-chat-inbox.md))
 - sending reminders
