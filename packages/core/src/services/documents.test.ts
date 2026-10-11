@@ -15,6 +15,7 @@ import {
   confirmDocumentUpload,
   createDocumentUpload,
   deleteDocument,
+  getDocument,
   listDocuments,
   readDocument,
   updateDocument,
@@ -83,6 +84,23 @@ describe.skipIf(!url)("documents service", () => {
       await db.auditLog.findMany({ where: { entityId: doc.id }, orderBy: { id: "asc" } })
     ).map((a) => a.action);
     expect(actions).toEqual(["document.uploaded", "document.read", "document.extracted"]);
+  });
+
+  it("gives a link that opens or saves the document, with a command to save it to disk", async () => {
+    await updateClient(owner, { clientId, consentGiven: true });
+    const doc = await upload(assistant);
+    const open = await getDocument(assistant, { documentId: doc.id });
+    expect(open.downloadUrl).toMatch(/disposition=inline$/);
+    expect(open.curl).toBe(`curl --fail -o "${doc.filename}" "${open.downloadUrl}"`);
+    const save = await getDocument(assistant, { documentId: doc.id, download: true });
+    expect(save.downloadUrl).toMatch(/disposition=attachment$/);
+
+    // Too large to read inline: the assistant is told to save it instead.
+    await db.document.update({ where: { id: doc.id }, data: { sizeBytes: 12 * 1024 * 1024 } });
+    await expect(readDocument(assistant, { documentId: doc.id })).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: expect.stringContaining("Save it with get_document"),
+    });
   });
 
   it("rejects disallowed types and keeps uploads within the client", async () => {

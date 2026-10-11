@@ -1,8 +1,6 @@
 import { documents } from "@ezvisa/core";
-import type { CallToolResult } from "@modelcontextprotocol/sdk/types.js";
 import { canAdminister, canEdit, canView, defineTool, type RawResult } from "../tool.js";
-
-const INLINE_IMAGES = ["image/jpeg", "image/png", "image/webp"];
+import { fileContent } from "./file-content.js";
 
 export const documentTools = [
   defineTool({
@@ -18,7 +16,7 @@ export const documentTools = [
     name: "get_document",
     title: "Get a document link",
     description:
-      "Document metadata and a download link valid for 5 minutes. To look at the content yourself, use read_document.",
+      "Document metadata and a link valid for 5 minutes, plus a ready-made curl command that saves the file to disk under its name (with download: true the link saves rather than opens in a browser). Use it to work on a file with your own tools, or for files too large for read_document. Every link is logged.",
     input: documents.getDocumentInput,
     annotations: { readOnlyHint: true },
     visibleTo: canView("documents"),
@@ -28,39 +26,23 @@ export const documentTools = [
     name: "read_document",
     title: "Read a document",
     description:
-      "Returns the document itself so you can read it: images inline, PDFs as an embedded file. Use it to check a document against the checklist and the template's known failures, then record what you found with update_document and update_case_item. Every read is logged.",
+      "Returns the document itself so you can read it: images inline, PDFs as an embedded file, up to 10 MB (larger files: get_document). Use it to check a document against the checklist and the template's known failures, then record what you found with update_document and update_case_item. Every read is logged.",
     input: documents.getDocumentInput,
     annotations: { readOnlyHint: true },
     visibleTo: canView("documents"),
     run: async (ctx, input): Promise<RawResult> => {
       const { document, bytes } = await documents.readDocument(ctx, input);
-      const data = Buffer.from(bytes).toString("base64");
-      const meta = { type: "text" as const, text: JSON.stringify(document, null, 2) };
-      let content: CallToolResult["content"];
-      if (INLINE_IMAGES.includes(document.mimeType)) {
-        content = [meta, { type: "image", data, mimeType: document.mimeType }];
-      } else if (document.mimeType === "application/pdf") {
-        content = [
-          meta,
-          {
-            type: "resource",
-            resource: {
-              uri: `ezvisa://documents/${document.id}`,
-              mimeType: "application/pdf",
-              blob: data,
-            },
-          },
-        ];
-      } else {
-        content = [
-          meta,
-          {
-            type: "text",
-            text: `${document.mimeType} files cannot be shown inline. Use get_document for a download link.`,
-          },
-        ];
-      }
-      return { raw: { content } };
+      return {
+        raw: {
+          content: fileContent({
+            metadata: document,
+            bytes,
+            mimeType: document.mimeType,
+            uri: `ezvisa://documents/${document.id}`,
+            otherwise: "Use get_document to save it to disk.",
+          }),
+        },
+      };
     },
   }),
   defineTool({

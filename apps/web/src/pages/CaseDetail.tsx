@@ -14,6 +14,7 @@ import {
 } from "../components/controls";
 import { DocumentList, FileDrop, useDocumentUpload } from "../components/DocumentList";
 import { Icon } from "../components/Icon";
+import { TemplateFileList, useTemplateFileLink } from "../components/TemplateFileList";
 import { Avatar, Card, CardTitle, Chip, Label, Progress, QueryView } from "../components/ui";
 import { useCan } from "../lib/can";
 import { daysUntil, formatDate, relativeDays, timeAgo } from "../lib/format";
@@ -487,8 +488,10 @@ function ChecklistRow({
 }) {
   const { can, human } = useCan();
   const update = useItemUpdate(c);
+  const form = useTemplateFileLink(c.number);
   const status = ITEM_STATUS[item.status] ?? { label: item.status, tone: "mute" as const };
   const canUpload = can("documents", "edit") && c.client.consentGiven;
+  const formFileId = item.formFileId;
 
   return (
     <li
@@ -520,6 +523,18 @@ function ChecklistRow({
         </div>
       </div>
       <div className="flex items-center gap-1.5">
+        {formFileId && (
+          <Button
+            variant="outline"
+            icon="file"
+            title="Open the blank form for this item"
+            aria-label={`Open the form for ${item.label}`}
+            pending={form.opening(formFileId)}
+            onClick={() => form.open(formFileId)}
+          >
+            Form
+          </Button>
+        )}
         {editable && item.status === "MISSING" && canUpload && <QuickUpload c={c} item={item} />}
         {editable && item.status === "RECEIVED" && human && (
           <Button
@@ -737,6 +752,21 @@ function Documents({ c }: { c: CaseDetail }) {
   );
 }
 
+function Forms({ c }: { c: CaseDetail }) {
+  if (c.forms.length === 0) return null;
+  return (
+    <Card>
+      <CardTitle
+        icon={{ name: "file" }}
+        sub={`Blank forms and letters from ${c.template.name} v${c.template.version}, the version this case was opened with.`}
+      >
+        Forms
+      </CardTitle>
+      <TemplateFileList files={c.forms} empty="" caseNumber={c.number} />
+    </Card>
+  );
+}
+
 function Failures({ c }: { c: CaseDetail }) {
   if (c.knownFailures.length === 0) return null;
   return (
@@ -799,6 +829,7 @@ export function CaseDetailPage() {
               <Checklist c={c} />
               <div className="flex flex-col gap-5">
                 <Documents c={c} />
+                <Forms c={c} />
                 <Failures c={c} />
                 {c.notes && (
                   <Card>

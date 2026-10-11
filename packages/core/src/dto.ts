@@ -220,8 +220,18 @@ export function caseSummaryDto(c: CaseWithRelations) {
 }
 export type CaseSummaryDto = ReturnType<typeof caseSummaryDto>;
 
-export function caseDetailDto(c: CaseWithRelations & { documents: Document[] }) {
+export function caseDetailDto(
+  c: CaseWithRelations & {
+    documents: Document[];
+    templateVersion: {
+      files: TemplateFile[];
+      items: Array<{ id: string; formFileId: string | null }>;
+    };
+  },
+) {
   const summary = caseSummaryDto(c);
+  // Which form fills each checklist item, from the template version the case was opened with.
+  const formOf = new Map(c.templateVersion.items.map((i) => [i.id, i.formFileId]));
   return {
     ...summary,
     client: {
@@ -232,7 +242,15 @@ export function caseDetailDto(c: CaseWithRelations & { documents: Document[] }) 
     },
     notes: c.notes,
     knownFailures: c.templateVersion.knownFailures,
-    items: [...c.items].sort((a, b) => a.position - b.position).map(caseItemDto),
+    items: [...c.items]
+      .sort((a, b) => a.position - b.position)
+      .map((i) => ({
+        ...caseItemDto(i),
+        /** The template form behind this item, if any: open it with get_template_file. */
+        formFileId: i.templateItemId ? (formOf.get(i.templateItemId) ?? null) : null,
+      })),
+    /** Forms, letters and reference files of the template version this case uses. */
+    forms: c.templateVersion.files.map(templateFileDto),
     documents: c.documents.filter((d) => !d.deletedAt).map(documentDto),
   };
 }

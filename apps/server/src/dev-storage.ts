@@ -1,5 +1,5 @@
 import { extname } from "node:path";
-import { LOCAL_STORAGE_PATH, type LocalDiskStorage } from "@ezvisa/core";
+import { contentDisposition, LOCAL_STORAGE_PATH, type LocalDiskStorage } from "@ezvisa/core";
 import express, { type NextFunction, type Request, type Response, type Router } from "express";
 
 const TYPES: Record<string, string> = {
@@ -53,6 +53,10 @@ export function devStorageRouter(storage: LocalDiskStorage, uploadOrigins: strin
       return;
     }
     res.type(TYPES[extname(key).toLowerCase()] ?? "application/octet-stream");
+    if (typeof req.query.name === "string") {
+      const disposition = req.query.disposition === "attachment" ? "attachment" : "inline";
+      res.setHeader("Content-Disposition", contentDisposition(disposition, req.query.name));
+    }
     res.send(Buffer.from(await storage.get(key)));
   });
 

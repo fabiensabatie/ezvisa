@@ -3,12 +3,13 @@ import { Prisma } from "@ezvisa/db";
 import { z } from "zod";
 import { audit } from "../audit.js";
 import { type Context, requireLevel, requireStorage, type Tx } from "../context.js";
-import { templateSummaryDto, templateVersionDto } from "../dto.js";
+import { templateFileDto, templateSummaryDto, templateVersionDto } from "../dto.js";
 import { DomainError } from "../errors.js";
-import { id, notFound, templateRef, templateWhere } from "../refs.js";
+import { caseRef, caseWhere, id, notFound, templateRef, templateWhere } from "../refs.js";
 import {
   assertMimeType,
   decodeBase64File,
+  MAX_INLINE_BYTES,
   MAX_TEMPLATE_FILE_BYTES,
   safeFilename,
 } from "./files.js";
@@ -120,6 +121,16 @@ export const confirmTemplateFileUploadInput = z.object({
   kind: fileKind,
   mimeType: z.string().trim().min(1),
   itemId: attachTemplateFileInput.shape.itemId,
+});
+export const getTemplateFileInput = z.object({
+  fileId: id("Template file"),
+  case: caseRef
+    .optional()
+    .describe("Open the file as part of this case: needs case access instead of template access"),
+  download: z
+    .boolean()
+    .default(false)
+    .describe("True to save the file; false (default) to open it in the browser"),
 });
 export const removeTemplateFileInput = z.object({
   template: templateRef,
@@ -608,6 +619,81 @@ export async function confirmTemplateFileUpload(
     sizeBytes: size,
     itemId: input.itemId,
   });
+}
+
+const FILE_LINK_SECONDS = 5 * 60;
+
+/**
+ * A 5-minute link to a template's form or file. Through a case it needs case access, and
+ * only reaches files of the template version that case was opened with.
+ */
+/** Finds a template file the actor may read, directly or through a case. */
+async function readableTemplateFile(
+  ctx: Context,
+  input: { fileId: string; case?: string | undefined },
+) {
+  requireLevel(ctx, input.case ? "cases" : "templates", "view");
+  const file = await ctx.db.templateFile.findUnique({
+    where: { id: input.fileId },
+    include: { version: { include: { template: true } } },
+  });
+  if (input.case) {
+    const kase = await ctx.db.case.findUnique({ where: caseWhere(input.case) });
+    if (!kase) throw notFound("case", input.case);
+    if (!file || file.versionId !== kase.templateVersionId) {
+      throw notFound("form on this case's template", input.fileId);
+    }
+  }
+  if (!file) throw notFound("template file", input.fileId);
+  // Saved under the display name, keeping the uploaded file's extension.
+  const ext = /\.[A-Za-z0-9]{1,8}$/.exec(file.storageKey)?.[0] ?? "";
+  const filename = file.name.toLowerCase().endsWith(ext.toLowerCase())
+    ? file.name
+    : `${file.name}${ext}`;
+  return {
+    file,
+    filename,
+    dto: {
+      ...templateFileDto(file),
+      template: { slug: file.version.template.slug, name: file.version.template.name },
+      version: file.version.version,
+      filename,
+    },
+  };
+}
+
+export async function getTemplateFile(ctx: Context, raw: z.input<typeof getTemplateFileInput>) {
+  const input = getTemplateFileInput.parse(raw);
+  const { file, filename, dto } = await readableTemplateFile(ctx, input);
+  const downloadUrl = await requireStorage(ctx).downloadUrl(
+    file.storageKey,
+    filename,
+    FILE_LINK_SECONDS,
+    input.download ? "attachment" : "inline",
+  );
+  return {
+    ...dto,
+    downloadUrl,
+    downloadUrlExpiresInSeconds: FILE_LINK_SECONDS,
+    // For MCP clients with a shell, such as Claude Code: saves the file to disk as is.
+    curl: `curl --fail -o "${filename.replace(/["\\]/g, "")}" "${downloadUrl}"`,
+  };
+}
+
+/**
+ * The file's bytes, for an assistant to read the form itself. Large files are refused:
+ * they would not fit in a conversation, and get_template_file saves them to disk instead.
+ */
+export async function readTemplateFile(ctx: Context, raw: z.input<typeof getTemplateFileInput>) {
+  const input = getTemplateFileInput.parse(raw);
+  const { file, dto } = await readableTemplateFile(ctx, input);
+  if (file.sizeBytes > MAX_INLINE_BYTES) {
+    throw new DomainError(
+      "VALIDATION",
+      `${dto.filename} is ${Math.ceil(file.sizeBytes / 1024 / 1024)} MB, too large to read inline (10 MB at most). Save it with get_template_file instead.`,
+    );
+  }
+  return { file: dto, bytes: await requireStorage(ctx).get(file.storageKey) };
 }
 
 export async function removeTemplateFile(

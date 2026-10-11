@@ -87,6 +87,14 @@ const caseInclude = {
 
 const detailInclude = {
   ...caseInclude,
+  templateVersion: {
+    include: {
+      template: true,
+      // The forms of the version this case was opened with, and which item each fills.
+      files: { orderBy: { name: "asc" } },
+      items: { select: { id: true, formFileId: true } },
+    },
+  },
   documents: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
 } as const satisfies Prisma.CaseInclude;
 

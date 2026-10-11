@@ -66,7 +66,14 @@ export {
   SESSION_COOKIE,
   SESSION_DAYS,
 } from "./sessions.js";
-export { MemoryStorage, S3Storage, type Storage, storageFromEnv } from "./storage.js";
+export {
+  contentDisposition,
+  type Disposition,
+  MemoryStorage,
+  S3Storage,
+  type Storage,
+  storageFromEnv,
+} from "./storage.js";
 export {
   ACCESS_TOKEN_PREFIX,
   generateToken,

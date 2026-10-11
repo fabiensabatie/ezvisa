@@ -19,7 +19,9 @@ import {
   createTemplateFileUpload,
   discardTemplateDraft,
   getTemplate,
+  getTemplateFile,
   publishTemplateVersion,
+  readTemplateFile,
   removeTemplateFile,
   reorderTemplateItems,
   updateTemplateItem,
@@ -201,5 +203,73 @@ describe.skipIf(!url)("templates service", () => {
     await expect(discardTemplateDraft(owner, { template: "tm30" })).rejects.toMatchObject({
       code: "CONFLICT",
     });
+  });
+
+  it("gives a case its template's forms, and opens them through the case", async () => {
+    // v1 gets a TM.7 form behind its first item, then is published.
+    await publishSampleTemplate(owner);
+    const withForm = await attachTemplateFile(owner, {
+      template: "retirement-extension",
+      name: "TM.7 application",
+      kind: "PDF_FORM",
+      filename: "tm7-2025.pdf",
+      mimeType: "application/pdf",
+      contentBase64: Buffer.from("%PDF-1.7 blank TM.7").toString("base64"),
+      itemId: (await getTemplate(owner, { template: "retirement-extension" })).selected.items[0]
+        ?.id,
+    });
+    const form = withForm.draft?.files[0];
+    await publishTemplateVersion(owner, { template: "retirement-extension" });
+
+    const client = await createClient(owner, { fullName: "Jo Maupas", nationality: "FR" });
+    const kase = await createCase(owner, { clientId: client.id, template: "retirement-extension" });
+    expect(kase.forms).toEqual([
+      expect.objectContaining({ id: form?.id, name: "TM.7 application" }),
+    ]);
+    expect(kase.items[0]?.formFileId).toBe(form?.id);
+    expect(kase.items[1]?.formFileId).toBeNull();
+
+    // Opening saves under the display name with the uploaded extension; "download" saves it.
+    const open = await getTemplateFile(owner, { fileId: form?.id ?? "", case: kase.number });
+    expect(open).toMatchObject({ filename: "TM.7 application.pdf", version: 2 });
+    expect(open.downloadUrl).toMatch(/disposition=inline$/);
+    expect(open.curl).toBe(`curl --fail -o "TM.7 application.pdf" "${open.downloadUrl}"`);
+    const save = await getTemplateFile(owner, { fileId: form?.id ?? "", download: true });
+    expect(save.downloadUrl).toMatch(/disposition=attachment$/);
+
+    const read = await readTemplateFile(owner, { fileId: form?.id ?? "", case: kase.number });
+    expect(Buffer.from(read.bytes).toString()).toBe("%PDF-1.7 blank TM.7");
+
+    // A case opened from another template cannot reach this file.
+    await createTemplate(owner, { slug: "tm30", name: "TM.30", items: [{ label: "Passport" }] });
+    await publishTemplateVersion(owner, { template: "tm30" });
+    const other = await createCase(owner, { clientId: client.id, template: "tm30" });
+    await expect(
+      getTemplateFile(owner, { fileId: form?.id ?? "", case: other.number }),
+    ).rejects.toMatchObject({ code: "NOT_FOUND" });
+  });
+
+  it("refuses to read a large template file inline", async () => {
+    await publishSampleTemplate(owner);
+    const upload = await createTemplateFileUpload(owner, {
+      template: "retirement-extension",
+      filename: "scan.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 11 * 1024 * 1024,
+    });
+    await storage.put(upload.uploadKey, new Uint8Array(11 * 1024 * 1024), "application/pdf");
+    const draft = await confirmTemplateFileUpload(owner, {
+      template: "retirement-extension",
+      uploadKey: upload.uploadKey,
+      name: "Scanned guide",
+      kind: "REFERENCE",
+      mimeType: "application/pdf",
+    });
+    const fileId = draft.draft?.files[0]?.id ?? "";
+    await expect(readTemplateFile(owner, { fileId })).rejects.toMatchObject({
+      code: "VALIDATION",
+      message: expect.stringContaining("Save it with get_template_file"),
+    });
+    expect((await getTemplateFile(owner, { fileId })).downloadUrl).toContain("scan.pdf");
   });
 });

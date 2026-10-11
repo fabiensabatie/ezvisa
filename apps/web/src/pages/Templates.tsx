@@ -16,6 +16,7 @@ import {
 } from "../components/controls";
 import { FileDrop } from "../components/DocumentList";
 import { Icon } from "../components/Icon";
+import { TemplateFileList } from "../components/TemplateFileList";
 import { Card, CardTitle, Chip, Empty, PageHeader, QueryView } from "../components/ui";
 import { useCan } from "../lib/can";
 import { fileSize, formatInstant, plural } from "../lib/format";
@@ -578,35 +579,15 @@ function Files({ t, editing }: { t: Template; editing: boolean }) {
   return (
     <Card>
       <CardTitle>Forms and files</CardTitle>
-      {t.selected.files.length === 0 ? (
-        <Empty>No forms attached.</Empty>
-      ) : (
-        <ul className="divide-y divide-line">
-          {t.selected.files.map((f) => (
-            <li key={f.id} className="flex items-center gap-3 py-3">
-              <span className={`grid size-10 place-items-center rounded-xl ${TONE.accent}`}>
-                <Icon name="file" />
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-extrabold">{f.name}</div>
-                <div className="text-xs text-muted">{fileSize(f.sizeBytes)}</div>
-              </div>
-              <Chip tone="accent">
-                {FILE_KINDS.find((k) => k.value === f.kind)?.label ?? f.kind}
-              </Chip>
-              {editing && (
-                <IconButton
-                  icon="trash"
-                  label={`Remove ${f.name}`}
-                  variant="ghost"
-                  disabled={remove.isPending}
-                  onClick={() => remove.mutate({ template: t.slug, fileId: f.id })}
-                />
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
+      <TemplateFileList
+        files={t.selected.files}
+        empty="No forms attached."
+        onRemove={
+          editing && !remove.isPending
+            ? (f) => remove.mutate({ template: t.slug, fileId: f.id })
+            : undefined
+        }
+      />
       {editing && (
         <div className="mt-3">
           <FileDrop

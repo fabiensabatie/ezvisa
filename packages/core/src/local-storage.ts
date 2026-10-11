@@ -1,7 +1,7 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, resolve, sep } from "node:path";
-import type { Storage } from "./storage.js";
+import type { Disposition, Storage } from "./storage.js";
 
 /** URL path under which the server exposes local storage in development. */
 export const LOCAL_STORAGE_PATH = "/__dev-storage";
@@ -65,8 +65,15 @@ export class LocalDiskStorage implements Storage {
     return this.signedUrl("PUT", key, expiresInSeconds);
   }
 
-  async downloadUrl(key: string, _filename: string, expiresInSeconds: number): Promise<string> {
-    return this.signedUrl("GET", key, expiresInSeconds);
+  async downloadUrl(
+    key: string,
+    filename: string,
+    expiresInSeconds: number,
+    disposition: Disposition = "inline",
+  ): Promise<string> {
+    // How to present the file is not part of the signature: it changes nothing about access.
+    const present = `&disposition=${disposition}&name=${encodeURIComponent(filename)}`;
+    return `${this.signedUrl("GET", key, expiresInSeconds)}${present}`;
   }
 
   /** Checks a link produced by uploadUrl or downloadUrl. */

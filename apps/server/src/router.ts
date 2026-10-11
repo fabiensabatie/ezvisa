@@ -185,6 +185,10 @@ export const appRouter = router({
     confirmFileUpload: protectedProcedure
       .input(templates.confirmTemplateFileUploadInput)
       .mutation(({ ctx, input }) => templates.confirmTemplateFileUpload(ctx.domain, input)),
+    /** A 5-minute link to open or download a form; through a case with case access only. */
+    fileLink: protectedProcedure
+      .input(templates.getTemplateFileInput)
+      .mutation(({ ctx, input }) => templates.getTemplateFile(ctx.domain, input)),
     removeFile: protectedProcedure
       .input(templates.removeTemplateFileInput)
       .mutation(({ ctx, input }) => templates.removeTemplateFile(ctx.domain, input)),

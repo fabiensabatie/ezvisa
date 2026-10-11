@@ -1,5 +1,6 @@
 import { templates } from "@ezvisa/core";
-import { canAdminister, canEdit, canView, defineTool } from "../tool.js";
+import { canAdminister, canEdit, canView, defineTool, type RawResult } from "../tool.js";
+import { fileContent } from "./file-content.js";
 
 const DRAFT_NOTE =
   "Changes go to the template's draft, which is created from the published version on the first change. Open cases are never affected; publish_template_version makes the draft apply to new cases.";
@@ -100,6 +101,39 @@ export const templateTools = [
     input: templates.confirmTemplateFileUploadInput,
     visibleTo: canEdit("templates"),
     run: (ctx, input) => templates.confirmTemplateFileUpload(ctx, input),
+  }),
+  defineTool({
+    name: "get_template_file",
+    title: "Get a template file",
+    description:
+      "A link to a template's form, letter or reference file, valid for 5 minutes, plus a ready-made curl command that saves it to disk under its name. Use it to fill in a blank form for a case with your own tools. File ids come from get_template (files) or get_case (forms, and formFileId on checklist items). Pass case to open a form of that case's template with case access only.",
+    input: templates.getTemplateFileInput,
+    annotations: { readOnlyHint: true },
+    visibleTo: (p) => canView("templates")(p) || canView("cases")(p),
+    run: (ctx, input) => templates.getTemplateFile(ctx, input),
+  }),
+  defineTool({
+    name: "read_template_file",
+    title: "Read a template file",
+    description:
+      "Returns a template's form or file itself so you can read it: PDFs as an embedded file, images inline, up to 10 MB (larger files: get_template_file). Use it to see which fields a form asks for. Pass case to read a form of that case's template with case access only.",
+    input: templates.getTemplateFileInput,
+    annotations: { readOnlyHint: true },
+    visibleTo: (p) => canView("templates")(p) || canView("cases")(p),
+    run: async (ctx, input): Promise<RawResult> => {
+      const { file, bytes } = await templates.readTemplateFile(ctx, input);
+      return {
+        raw: {
+          content: fileContent({
+            metadata: file,
+            bytes,
+            mimeType: file.mimeType,
+            uri: `ezvisa://template-files/${file.id}`,
+            otherwise: "Use get_template_file to save it to disk.",
+          }),
+        },
+      };
+    },
   }),
   defineTool({
     name: "remove_template_file",

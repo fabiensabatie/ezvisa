@@ -590,10 +590,10 @@ type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM"; db: PrismaCl
 | Employees | `list_employees`, `get_employee`, `create_employee`, `update_employee`, `deactivate_employee` | team |
 | Roles | `list_roles`, `get_role`, `create_role`, `update_role`, `delete_role` (only when no employee uses it) | team |
 | Tokens | `list_tokens`, `revoke_token` | team: full |
-| Templates | `list_templates`, `get_template` (version optional), `create_template`, `update_template`, `add_template_item`, `update_template_item`, `remove_template_item`, `reorder_template_items`, `attach_template_file`, `create_template_file_upload`, `confirm_template_file_upload`, `remove_template_file`, `publish_template_version`, `archive_template` | templates |
+| Templates | `list_templates`, `get_template` (version optional), `create_template`, `update_template`, `add_template_item`, `update_template_item`, `remove_template_item`, `reorder_template_items`, `attach_template_file`, `create_template_file_upload`, `confirm_template_file_upload`, `get_template_file` (link and save-to-disk command), `read_template_file` (content, up to 10 MB), `remove_template_file`, `publish_template_version`, `archive_template` | templates; reading a form through a case needs only case access |
 | Cases | `list_cases` (stage, assignee, client, `due_before`), `get_case`, `create_case`, `update_case` (assignee, due date, notes), `move_case_stage`, `close_case` (outcome) | cases, plus the stage guards |
 | Case items | `update_case_item` (status, note, linked documents) | cases: edit |
-| Documents | `list_documents`, `get_document`, `read_document`, `upload_document`, `create_document_upload`, `confirm_document_upload`, `update_document` (fields read from it), `delete_document` | documents |
+| Documents | `list_documents`, `get_document` (link and save-to-disk command), `read_document` (content, up to 10 MB), `upload_document`, `create_document_upload`, `confirm_document_upload`, `update_document` (fields read from it), `delete_document` | documents |
 | Reminders | `list_deadlines` (`within_days`), `list_reminders` (status), `mark_reminder_sent`, `skip_reminder`, `get_reminder_rules`, `update_reminder_rule` | reminders |
 
 Token creation is deliberately not an MCP tool in the MVP. A leaked assistant token must not be able to mint new tokens.

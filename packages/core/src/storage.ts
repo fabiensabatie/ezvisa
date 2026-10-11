@@ -8,6 +8,22 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
+/** "inline" opens the file in the browser; "attachment" saves it. */
+export type Disposition = "inline" | "attachment";
+
+/**
+ * A Content-Disposition value that keeps non-ASCII names (Thai, accents) intact: an ASCII
+ * fallback for old clients, then the exact name encoded as RFC 5987 asks.
+ */
+export function contentDisposition(disposition: Disposition, filename: string): string {
+  const ascii = filename.replace(/[^\x20-\x7e]/g, "_").replace(/["\\]/g, "");
+  const exact = encodeURIComponent(filename).replace(
+    /['()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `${disposition}; filename="${ascii}"; filename*=UTF-8''${exact}`;
+}
+
 /** Object storage used for client documents and template files. */
 export interface Storage {
   put(key: string, body: Uint8Array, contentType: string): Promise<void>;
@@ -16,7 +32,13 @@ export interface Storage {
   size(key: string): Promise<number | null>;
   delete(key: string): Promise<void>;
   uploadUrl(key: string, contentType: string, expiresInSeconds: number): Promise<string>;
-  downloadUrl(key: string, filename: string, expiresInSeconds: number): Promise<string>;
+  /** A signed link that shows the file under `filename`, or saves it with "attachment". */
+  downloadUrl(
+    key: string,
+    filename: string,
+    expiresInSeconds: number,
+    disposition?: Disposition,
+  ): Promise<string>;
 }
 
 export type S3StorageConfig = {
@@ -102,13 +124,18 @@ export class S3Storage implements Storage {
     );
   }
 
-  downloadUrl(key: string, filename: string, expiresInSeconds: number): Promise<string> {
+  downloadUrl(
+    key: string,
+    filename: string,
+    expiresInSeconds: number,
+    disposition: Disposition = "inline",
+  ): Promise<string> {
     return getSignedUrl(
       this.client,
       new GetObjectCommand({
         Bucket: this.bucket,
         Key: key,
-        ResponseContentDisposition: `inline; filename="${filename.replace(/"/g, "")}"`,
+        ResponseContentDisposition: contentDisposition(disposition, filename),
       }),
       { expiresIn: expiresInSeconds },
     );
@@ -141,8 +168,13 @@ export class MemoryStorage implements Storage {
     return `memory://upload/${key}`;
   }
 
-  async downloadUrl(key: string): Promise<string> {
-    return `memory://download/${key}`;
+  async downloadUrl(
+    key: string,
+    _filename: string,
+    _expiresInSeconds: number,
+    disposition: Disposition = "inline",
+  ): Promise<string> {
+    return `memory://download/${key}?disposition=${disposition}`;
   }
 }
 

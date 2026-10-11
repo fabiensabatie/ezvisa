@@ -9,6 +9,7 @@ import { caseRef, caseWhere, id, notFound } from "../refs.js";
 import {
   assertMimeType,
   decodeBase64File,
+  MAX_INLINE_BYTES,
   MAX_UPLOAD_BYTES,
   safeFilename,
   sha256Hex,
@@ -28,7 +29,13 @@ export const listDocumentsInput = z.object({
   clientId: id("Client").optional(),
   case: caseRef.optional(),
 });
-export const getDocumentInput = z.object({ documentId: id("Document") });
+export const getDocumentInput = z.object({
+  documentId: id("Document"),
+  download: z
+    .boolean()
+    .default(false)
+    .describe("True to save the file; false (default) to open it in the browser"),
+});
 export const uploadDocumentInput = z.object({
   clientId: id("Client"),
   filename: z.string().trim().min(1).max(200),
@@ -142,13 +149,14 @@ async function findDocument(ctx: Context, documentId: string) {
 
 export async function getDocument(ctx: Context, raw: z.input<typeof getDocumentInput>) {
   requireLevel(ctx, "documents", "view");
-  const { documentId } = getDocumentInput.parse(raw);
+  const { documentId, download } = getDocumentInput.parse(raw);
   const document = await findDocument(ctx, documentId);
   const storage = requireStorage(ctx);
   const downloadUrl = await storage.downloadUrl(
     document.storageKey,
     document.filename,
     DOWNLOAD_URL_SECONDS,
+    download ? "attachment" : "inline",
   );
   await audit(ctx.db, ctx, {
     action: "document.url_issued",
@@ -159,6 +167,8 @@ export async function getDocument(ctx: Context, raw: z.input<typeof getDocumentI
     ...documentDto(document),
     downloadUrl,
     downloadUrlExpiresInSeconds: DOWNLOAD_URL_SECONDS,
+    // For MCP clients with a shell, such as Claude Code: saves the file to disk as is.
+    curl: `curl --fail -o "${document.filename.replace(/["\\]/g, "")}" "${downloadUrl}"`,
   };
 }
 
@@ -167,6 +177,12 @@ export async function readDocument(ctx: Context, raw: z.input<typeof getDocument
   requireLevel(ctx, "documents", "view");
   const { documentId } = getDocumentInput.parse(raw);
   const document = await findDocument(ctx, documentId);
+  if (document.sizeBytes > MAX_INLINE_BYTES) {
+    throw new DomainError(
+      "VALIDATION",
+      `${document.filename} is ${Math.ceil(document.sizeBytes / 1024 / 1024)} MB, too large to read inline (10 MB at most). Save it with get_document instead.`,
+    );
+  }
   const bytes = await requireStorage(ctx).get(document.storageKey);
   await audit(ctx.db, ctx, { action: "document.read", entity: "Document", entityId: documentId });
   return { document: documentDto(document), bytes };

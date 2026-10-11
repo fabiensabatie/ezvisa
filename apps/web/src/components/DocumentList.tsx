@@ -2,6 +2,7 @@ import { useMutation } from "@tanstack/react-query";
 import { type DragEvent, useId, useState } from "react";
 import { useCan } from "../lib/can";
 import { fileSize, timeAgo } from "../lib/format";
+import { downloadFrom, openInNewTab } from "../lib/open";
 import { toast } from "../lib/toast";
 import { TONE } from "../lib/tones";
 import { ACCEPT, fileProblem, mimeOf, putFile } from "../lib/upload";
@@ -29,21 +30,8 @@ export function DocumentList({
   const remove = useMutation(trpc.documents.delete.mutationOptions());
   const [removing, setRemoving] = useState<Doc | null>(null);
 
-  async function open(id: string) {
-    // Open the tab during the click so Safari does not block it, then point it at the link.
-    const tab = window.open("", "_blank");
-    try {
-      const { downloadUrl } = await link.mutateAsync({ documentId: id });
-      if (tab) {
-        tab.opener = null;
-        tab.location.href = downloadUrl;
-      } else {
-        window.location.assign(downloadUrl);
-      }
-    } catch {
-      tab?.close();
-    }
-  }
+  const linkTo = (documentId: string, download: boolean) => async () =>
+    (await link.mutateAsync({ documentId, download })).downloadUrl;
 
   if (documents.length === 0) return <Empty>{empty}</Empty>;
   return (
@@ -73,9 +61,20 @@ export function DocumentList({
               </Button>
             )}
             <Button
+              variant="ghost"
+              aria-label={`Download ${d.filename}`}
+              title="Download"
+              className="!px-3"
+              onClick={() => downloadFrom(linkTo(d.id, true))}
+            >
+              <Icon name="download" size={16} />
+            </Button>
+            <Button
               variant="soft"
-              pending={link.isPending && link.variables?.documentId === d.id}
-              onClick={() => open(d.id)}
+              pending={
+                link.isPending && link.variables?.documentId === d.id && !link.variables.download
+              }
+              onClick={() => openInNewTab(linkTo(d.id, false))}
             >
               Open
               <Icon name="external" size={15} />

@@ -1,4 +1,4 @@
-import { type Context, clients, MemoryStorage } from "@ezvisa/core";
+import { type Context, cases, clients, MemoryStorage, templates } from "@ezvisa/core";
 import {
   createTestActor,
   createTestContext,
@@ -226,6 +226,57 @@ describe.skipIf(!url)("MCP server", () => {
     const runner = await connect(await as("Runner"));
     const runnerTools = (await runner.listTools()).tools.map((t) => t.name);
     expect(runnerTools).not.toContain("create_template_file_upload");
+  });
+
+  it("finds a case's blank form and hands it over, to save or to read", async () => {
+    const owner = await as("Owner");
+    await publishSampleTemplate(owner);
+    const items = (await templates.getTemplate(owner, { template: "retirement-extension" }))
+      .selected.items;
+    await templates.attachTemplateFile(owner, {
+      template: "retirement-extension",
+      name: "TM.7 application",
+      kind: "PDF_FORM",
+      filename: "tm7.pdf",
+      mimeType: "application/pdf",
+      contentBase64: Buffer.from("%PDF-1.7 blank TM.7").toString("base64"),
+      itemId: items[0]?.id,
+    });
+    await templates.publishTemplateVersion(owner, { template: "retirement-extension" });
+    const person = await clients.createClient(owner, { fullName: "Jo Maupas", nationality: "FR" });
+    const kase = await cases.createCase(owner, {
+      clientId: person.id,
+      template: "retirement-extension",
+    });
+
+    // The assistant, working on the case, finds the form behind the first checklist item.
+    const assistant = await connect(await as("Assistant (MCP)"));
+    const detail = (await call(assistant, "get_case", { case: kase.number })).data as {
+      forms: Array<{ id: string; name: string }>;
+      items: Array<{ formFileId: string | null }>;
+    };
+    const formId = detail.items[0]?.formFileId;
+    expect(detail.forms.map((f) => f.name)).toEqual(["TM.7 application"]);
+    expect(formId).toBe(detail.forms[0]?.id);
+
+    const saved = await call(assistant, "get_template_file", {
+      fileId: formId,
+      case: kase.number,
+      download: true,
+    });
+    expect(saved.data).toMatchObject({ filename: "TM.7 application.pdf" });
+    expect((saved.data as { curl: string }).curl).toMatch(
+      /^curl --fail -o "TM\.7 application\.pdf"/,
+    );
+
+    const read = await call(assistant, "read_template_file", { fileId: formId, case: kase.number });
+    const pdf = read.result.content.find((c) => c.type === "resource");
+    expect(pdf).toMatchObject({
+      resource: {
+        mimeType: "application/pdf",
+        blob: Buffer.from("%PDF-1.7 blank TM.7").toString("base64"),
+      },
+    });
   });
 
   it("lists deadlines and renders reminders", async () => {

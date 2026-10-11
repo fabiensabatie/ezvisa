@@ -16,7 +16,7 @@ export const caseTools = [
     name: "get_case",
     title: "Get a case",
     description:
-      "A case in full: stage, every checklist item with its status, note and documents, the template's known failures, and stored documents.",
+      "A case in full: stage, every checklist item with its status, note, documents and the form behind it (formFileId), the forms of its template version, the template's known failures, and stored documents. Open a form with get_template_file or read_template_file, passing this case.",
     input: cases.getCaseInput,
     annotations: { readOnlyHint: true },
     visibleTo: canView("cases"),
