@@ -81,4 +81,24 @@ describe("dashboard hosting", () => {
     const api = await fetch(`${url}/trpc/does-not-exist`);
     expect(api.status).toBe(404);
   });
+
+  it("sends page visits on another host to the public address, but not API calls", async () => {
+    const webDir = mkdtempSync(join(tmpdir(), "ezvisa-web-"));
+    writeFileSync(join(webDir, "index.html"), "<!doctype html><title>EzVisa</title>");
+    const url = await start({
+      db: healthyDb,
+      version: "test",
+      webDir,
+      publicUrl: "https://app.example.test",
+    });
+    const asHost = (path: string, host: string) =>
+      fetch(`${url}${path}`, { redirect: "manual", headers: { "X-Forwarded-Host": host } });
+
+    const old = await asHost("/upload?x=1", "ezvisa-production.up.railway.app");
+    expect(old.status).toBe(308);
+    expect(old.headers.get("location")).toBe("https://app.example.test/upload?x=1");
+    expect((await asHost("/upload", "app.example.test")).status).toBe(200);
+    // The old host still answers APIs, so existing connectors and webhooks keep working.
+    expect((await asHost("/health", "ezvisa-production.up.railway.app")).status).toBe(200);
+  });
 });

@@ -163,9 +163,18 @@ export function createApp({
       }),
     );
     // Single-page app: unknown non-API paths return index.html.
+    const canonical = origin ? new URL(origin) : null;
     app.get("/{*path}", (req, res, next) => {
       if (API_PATHS.has(req.path) || API_PREFIXES.some((prefix) => req.path.startsWith(prefix))) {
         return next();
+      }
+      // Pages live on the public address only. Someone on another host (the Railway domain)
+      // is sent there, so sign-in, browser uploads and links share one origin. APIs, MCP
+      // and webhooks are left alone: connectors and Chatwoot may still call the old host.
+      const local = req.hostname === "localhost" || req.hostname === "127.0.0.1";
+      if (canonical && !local && req.hostname !== canonical.hostname) {
+        res.redirect(308, new URL(req.originalUrl, canonical).toString());
+        return;
       }
       res.setHeader("Cache-Control", "no-cache");
       // `root` keeps the dot-file check on the relative path only, so a checkout under a
