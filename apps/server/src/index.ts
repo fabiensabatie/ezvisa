@@ -5,6 +5,8 @@ import {
   S3Storage,
   type Storage,
   storageFromEnv,
+  vapidSubject,
+  WebPushSender,
 } from "@ezvisa/core";
 import { createDb } from "@ezvisa/db";
 import { createApp } from "./app.js";
@@ -75,10 +77,14 @@ if (!publicUrl) {
   );
 }
 
+// Web Push keys are generated on first use and kept in the database.
+const push = new WebPushSender(db, vapidSubject(publicUrl));
+
 const app = createApp({
   db,
   version,
   storage,
+  push,
   uploadOrigins,
   publicUrl,
   webDir: production ? webDir : undefined,

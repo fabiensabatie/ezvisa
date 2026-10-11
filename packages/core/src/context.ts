@@ -1,6 +1,7 @@
 import type { Db, Prisma } from "@ezvisa/db";
 import { DomainError } from "./errors.js";
 import { hasLevel, type Level, type Permissions, type Resource } from "./permissions.js";
+import type { PushSender } from "./services/notifications.js";
 import type { Storage } from "./storage.js";
 
 export type Via = "DASHBOARD" | "MCP" | "SYSTEM";
@@ -23,6 +24,8 @@ export type Context = {
   /** Null when no bucket is configured; document operations then fail clearly. */
   storage: Storage | null;
   now: () => Date;
+  /** Sends Web Push notifications. Absent where nothing is sent, such as MCP. */
+  push?: PushSender | null;
 };
 
 /** A Prisma client usable inside or outside a transaction. */

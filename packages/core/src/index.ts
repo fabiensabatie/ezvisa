@@ -46,6 +46,14 @@ export {
   MAX_TEMPLATE_FILE_BYTES,
   MAX_UPLOAD_BYTES,
 } from "./services/files.js";
+export * as notifications from "./services/notifications.js";
+export {
+  type PushMessage,
+  type PushSender,
+  type PushTarget,
+  vapidSubject,
+  WebPushSender,
+} from "./services/notifications.js";
 export * as reminders from "./services/reminders.js";
 export * as settings from "./services/settings.js";
 export * as team from "./services/team.js";

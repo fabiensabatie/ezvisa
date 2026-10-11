@@ -5,6 +5,7 @@ import {
   authenticateSession,
   LOCAL_STORAGE_PATH,
   LocalDiskStorage,
+  type PushSender,
   SESSION_COOKIE,
   type Storage,
 } from "@ezvisa/core";
@@ -23,6 +24,8 @@ export type AppOptions = {
   version: string;
   /** Document storage. Null when no bucket is configured. */
   storage?: Storage | null;
+  /** Sends Web Push notifications. Null turns notifications off. */
+  push?: PushSender | null;
   /** Built dashboard to serve. Omitted in development, where Vite serves it. */
   webDir?: string;
   now?: () => Date;
@@ -48,6 +51,7 @@ export function createApp({
   version,
   webDir,
   storage = null,
+  push = null,
   now = () => new Date(),
   mcpRateLimit,
   loginRateLimit,
@@ -92,7 +96,7 @@ export function createApp({
         const actor = sessionId
           ? await authenticateSession(db, sessionId, now()).catch(() => null)
           : null;
-        return { requestId: randomUUID(), db, storage, now, actor };
+        return { requestId: randomUUID(), db, storage, push, now, actor };
       },
     }),
   );

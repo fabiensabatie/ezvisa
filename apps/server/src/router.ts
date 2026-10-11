@@ -3,6 +3,7 @@ import {
   clients,
   dashboard,
   documents,
+  notifications,
   reminders,
   settings,
   team,
@@ -103,6 +104,21 @@ export const appRouter = router({
     updateRule: protectedProcedure
       .input(reminders.updateReminderRuleInput)
       .mutation(({ ctx, input }) => reminders.updateReminderRule(ctx.domain, input)),
+  }),
+
+  notifications: router({
+    /** The public key a browser needs to subscribe. */
+    config: protectedProcedure.query(({ ctx }) => notifications.pushConfig(ctx.domain)),
+    status: protectedProcedure
+      .input(notifications.endpointInput)
+      .query(({ ctx, input }) => notifications.subscriptionStatus(ctx.domain, input)),
+    subscribe: protectedProcedure
+      .input(notifications.subscribeInput)
+      .mutation(({ ctx, input }) => notifications.subscribe(ctx.domain, input)),
+    unsubscribe: protectedProcedure
+      .input(notifications.endpointInput)
+      .mutation(({ ctx, input }) => notifications.unsubscribe(ctx.domain, input)),
+    test: protectedProcedure.mutation(({ ctx }) => notifications.sendTest(ctx.domain)),
   }),
 
   settings: router({

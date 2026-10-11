@@ -136,7 +136,7 @@ describe.skipIf(!url)("reminders service", () => {
       stayUntil: "2026-10-08",
     });
     const result = await runDailyJob(db, TEST_NOW);
-    expect(result).toEqual({ today: "2026-10-01", remindersDue: 1 });
+    expect(result).toEqual({ today: "2026-10-01", remindersDue: 1, notifications: null });
     expect(await runDailyJob(db, TEST_NOW)).toEqual(result);
     const rows = await db.reminder.findMany({ where: { clientId: tom.id } });
     expect(rows.map((r) => [r.offsetDays, r.status])).toEqual([[7, "DUE"]]);

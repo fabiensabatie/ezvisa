@@ -100,19 +100,36 @@ model Role {
 }
 
 model Employee {
-  id         String       @id @default(uuid(7)) @db.Uuid
-  name       String
-  email      String?      @unique
-  phone      String?
-  kind       EmployeeKind @default(HUMAN)
-  roleId     String       @db.Uuid
-  role       Role         @relation(fields: [roleId], references: [id])
-  active     Boolean      @default(true)
-  tokens     ApiToken[]
-  oauthCodes OAuthCode[]
-  assigned   Case[]       @relation("assignee")
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  id                String             @id @default(uuid(7)) @db.Uuid
+  name              String
+  email             String?            @unique
+  phone             String?
+  kind              EmployeeKind       @default(HUMAN)
+  roleId            String             @db.Uuid
+  role              Role               @relation(fields: [roleId], references: [id])
+  active            Boolean            @default(true)
+  tokens            ApiToken[]
+  oauthCodes        OAuthCode[]
+  pushSubscriptions PushSubscription[]
+  assigned          Case[]             @relation("assignee")
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+}
+
+/// A browser that agreed to receive notifications (Web Push), one row per device. The
+/// endpoint is the push service URL for that browser; p256dh and auth encrypt the payload.
+model PushSubscription {
+  id         String    @id @default(uuid(7)) @db.Uuid
+  employeeId String    @db.Uuid
+  employee   Employee  @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  endpoint   String    @unique
+  p256dh     String
+  auth       String
+  userAgent  String?
+  createdAt  DateTime  @default(now())
+  lastSentAt DateTime?
+
+  @@index([employeeId])
 }
 
 model ApiToken {

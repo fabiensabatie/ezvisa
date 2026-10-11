@@ -3,6 +3,7 @@ import {
   type Context,
   type ErrorCode,
   isDomainError,
+  type PushSender,
   type Storage,
 } from "@ezvisa/core";
 import type { Db } from "@ezvisa/db";
@@ -14,6 +15,7 @@ export type TrpcContext = {
   requestId: string;
   db: Db;
   storage: Storage | null;
+  push: PushSender | null;
   now: () => Date;
   actor: Actor | null;
 };
@@ -55,6 +57,7 @@ export const protectedProcedure = publicProcedure.use(({ ctx, next }) => {
     via: "DASHBOARD",
     db: ctx.db,
     storage: ctx.storage,
+    push: ctx.push,
     now: ctx.now,
   };
   return next({ ctx: { domain } });

@@ -47,8 +47,8 @@ export default defineRailway(() => {
   });
 
   // A cron service: Railway starts it on schedule, it runs once and exits. Schedules are in
-  // UTC, so 01:00 is 08:00 in Bangkok. It schedules reminders, marks today's as due and
-  // clears expired OAuth codes and tokens.
+  // UTC, so 01:00 is 08:00 in Bangkok. It schedules reminders, marks today's as due, sends
+  // the push notification about them and clears expired OAuth codes and tokens.
   const jobs = service("jobs", {
     source: REPO,
     build: {
@@ -61,6 +61,8 @@ export default defineRailway(() => {
     env: {
       NODE_ENV: "production",
       DATABASE_URL: db.env.DATABASE_URL,
+      // Push services see it as the sender's contact in every notification.
+      APP_URL: ezvisa.env.APP_URL,
     },
   });
 
