@@ -1,14 +1,41 @@
 import {
-  authenticateSession,
+  type Actor,
   createSession,
   endSession,
+  resumeSession,
   SESSION_COOKIE,
   SESSION_DAYS,
 } from "@ezvisa/core";
 import type { Db } from "@ezvisa/db";
-import express, { type Router } from "express";
+import express, { type Request, type Response, type Router } from "express";
 import { readCookie, sessionCookie } from "./cookies.js";
 import { createRateLimiter } from "./rate-limit.js";
+
+/**
+ * The signed-in person behind a dashboard request, or null. Sessions are rolling: when
+ * the session is extended, the cookie is sent again with a fresh 30 days, so the browser
+ * keeps it as long as the database does.
+ */
+export async function dashboardActor(
+  options: { db: Db; now: () => Date; secureCookies: boolean },
+  req: Request,
+  res: Response,
+): Promise<Actor | null> {
+  const id = readCookie(req.header("cookie"), SESSION_COOKIE);
+  if (!id) return null;
+  const session = await resumeSession(options.db, id, options.now()).catch(() => null);
+  if (!session) return null;
+  if (session.renewedUntil) {
+    res.append(
+      "Set-Cookie",
+      sessionCookie(SESSION_COOKIE, id, {
+        maxAgeSeconds: SESSION_DAYS * 86_400,
+        secure: options.secureCookies,
+      }),
+    );
+  }
+  return session.actor;
+}
 
 export type AuthRouteOptions = {
   db: Db;
@@ -58,13 +85,16 @@ export function authRouter(options: AuthRouteOptions): Router {
   });
 
   router.get("/auth/me", async (req, res) => {
-    try {
-      const id = readCookie(req.header("cookie"), SESSION_COOKIE) ?? "";
-      const actor = await authenticateSession(options.db, id, now());
-      res.json({ name: actor.name, role: actor.roleName, kind: actor.kind });
-    } catch {
+    const actor = await dashboardActor(
+      { db: options.db, now, secureCookies: options.secureCookies },
+      req,
+      res,
+    );
+    if (!actor) {
       res.status(401).json({ error: "Not signed in." });
+      return;
     }
+    res.json({ name: actor.name, role: actor.roleName, kind: actor.kind });
   });
 
   return router;

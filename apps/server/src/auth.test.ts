@@ -18,13 +18,16 @@ describe.skipIf(!url)("dashboard sign-in and API", () => {
   let db: Db;
   let base: string;
   let close: () => Promise<void>;
+  // The server's clock, moved forward by the rolling-session test.
+  let clock = TEST_NOW;
+  const DAY = 86_400_000;
 
   beforeAll(async () => {
     db = createDb(url as string);
     const app = createApp({
       db,
       version: "test",
-      now: () => TEST_NOW,
+      now: () => clock,
       loginRateLimit: 5,
       secureCookies: true,
     });
@@ -37,7 +40,10 @@ describe.skipIf(!url)("dashboard sign-in and API", () => {
     await close();
     await db.$disconnect();
   });
-  beforeEach(() => resetDatabase(db));
+  beforeEach(async () => {
+    clock = TEST_NOW;
+    await resetDatabase(db);
+  });
 
   const login = (token: string) =>
     fetch(`${base}/auth/login`, {
@@ -127,6 +133,35 @@ describe.skipIf(!url)("dashboard sign-in and API", () => {
     const runner = await createTestActor(db, "Runner");
     const runnerCookie = cookieOf(await login(runner.token));
     expect((await trpc("team.tokens", runnerCookie)).status).toBe(403);
+  });
+
+  it("keeps a session alive while it is used: 30 days from the last day of use", async () => {
+    const owner = await createTestActor(db, "Owner");
+    const cookie = cookieOf(await login(owner.token));
+    const expiry = async () => (await db.session.findFirstOrThrow()).expiresAt;
+
+    // Same day as sign-in: nothing to renew, so no database write and no new cookie.
+    const sameDay = await trpc("me", cookie);
+    expect(sameDay.status).toBe(200);
+    expect(sameDay.headers.get("set-cookie")).toBeNull();
+    expect(await expiry()).toEqual(new Date(TEST_NOW.getTime() + 30 * DAY));
+
+    // 20 days later the session and the cookie both move to 30 days from now.
+    clock = new Date(TEST_NOW.getTime() + 20 * DAY);
+    const later = await trpc("me", cookie);
+    expect(later.status).toBe(200);
+    expect(later.headers.get("set-cookie")).toBe(
+      `${cookie}; Path=/; HttpOnly; SameSite=Lax; Max-Age=2592000; Secure`,
+    );
+    expect(await expiry()).toEqual(new Date(clock.getTime() + 30 * DAY));
+
+    // 45 days after sign-in, past the first expiry, the person is still signed in.
+    clock = new Date(TEST_NOW.getTime() + 45 * DAY);
+    expect((await fetch(`${base}/auth/me`, { headers: { Cookie: cookie } })).status).toBe(200);
+
+    // A month and a day without a visit ends it.
+    clock = new Date(clock.getTime() + 31 * DAY);
+    expect((await trpc("me", cookie)).status).toBe(401);
   });
 
   it("rate-limits sign-in attempts per address", async () => {

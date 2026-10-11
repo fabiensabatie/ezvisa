@@ -456,7 +456,7 @@ VALUES (gen_random_uuid(), '<employee uuid>', 'Namtarn laptop',
 
 1. The sign-in page posts `{ token }` to `POST /auth/login`.
 2. The server hashes the token, finds an active, unrevoked, unexpired `ApiToken` whose employee is active, and creates a `Session`.
-3. It sets the `ezv_session` cookie: httpOnly, Secure, SameSite=Lax, 30 days.
+3. It sets the `ezv_session` cookie: httpOnly, Secure, SameSite=Lax, 30 days. Sessions are rolling: once a day of use has passed, the session's expiry moves back to 30 days from now and the cookie is sent again to match. Someone who uses the dashboard at least once a month stays signed in; a month without a visit ends the session. Revoking the token still ends it at once.
 4. `POST /auth/logout` deletes the session. `GET /auth/me` returns the employee, role and permissions.
 5. Login attempts are rate-limited to 10 per minute per IP address.
 

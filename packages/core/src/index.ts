@@ -62,6 +62,7 @@ export {
   authenticateSession,
   createSession,
   endSession,
+  resumeSession,
   SESSION_COOKIE,
   SESSION_DAYS,
 } from "./sessions.js";

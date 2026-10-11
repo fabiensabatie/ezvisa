@@ -1,19 +1,11 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import {
-  authenticateSession,
-  LOCAL_STORAGE_PATH,
-  LocalDiskStorage,
-  type PushSender,
-  SESSION_COOKIE,
-  type Storage,
-} from "@ezvisa/core";
+import { LOCAL_STORAGE_PATH, LocalDiskStorage, type PushSender, type Storage } from "@ezvisa/core";
 import type { Db } from "@ezvisa/db";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import express, { type Express } from "express";
-import { authRouter } from "./auth.js";
-import { readCookie } from "./cookies.js";
+import { authRouter, dashboardActor } from "./auth.js";
 import { devStorageRouter } from "./dev-storage.js";
 import { mcpRouter } from "./mcp.js";
 import { oauthRouter, resourceMetadataUrl } from "./oauth.js";
@@ -91,11 +83,8 @@ export function createApp({
     "/trpc",
     createExpressMiddleware({
       router: appRouter,
-      async createContext({ req }) {
-        const sessionId = readCookie(req.header("cookie"), SESSION_COOKIE);
-        const actor = sessionId
-          ? await authenticateSession(db, sessionId, now()).catch(() => null)
-          : null;
+      async createContext({ req, res }) {
+        const actor = await dashboardActor({ db, now, secureCookies }, req, res);
         return { requestId: randomUUID(), db, storage, push, now, actor };
       },
     }),

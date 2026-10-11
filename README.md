@@ -56,7 +56,7 @@ pnpm db:seed
 pnpm dev
 ```
 
-The seed prints an owner token once. The dashboard runs at http://localhost:5173 and the server at http://localhost:3000. Sign in to the dashboard with that token: it becomes an httpOnly session cookie for 30 days, and the token itself is never kept in the browser.
+The seed prints an owner token once. The dashboard runs at http://localhost:5173 and the server at http://localhost:3000. Sign in to the dashboard with that token: it becomes an httpOnly session cookie that lasts 30 days from the last visit, and the token itself is never kept in the browser.
 
 ### Without Docker
 
