@@ -176,6 +176,58 @@ describe.skipIf(!url)("MCP server", () => {
     expect(bad.result.isError).toBe(true);
   });
 
+  it("adds a large template file through an upload link, without base64", async () => {
+    const owner = await as("Owner");
+    const published = await publishSampleTemplate(owner);
+    const formItem = published.published?.items[0];
+    const client = await connect(owner);
+    const size = 25 * 1024 * 1024;
+
+    const link = await call(client, "create_template_file_upload", {
+      template: "retirement-extension",
+      filename: "TM7 scan.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: size,
+    });
+    const upload = link.data as { uploadKey: string; uploadUrl: string; curl: string };
+    expect(link.result.isError).toBeFalsy();
+    expect(upload.curl).toContain('-H "Content-Type: application/pdf" --upload-file');
+    expect(upload.curl).toContain(upload.uploadUrl);
+
+    // What the curl PUT does: the bytes land in the bucket under the uploadKey.
+    await storage.put(upload.uploadKey, new Uint8Array(size), "application/pdf");
+    const confirmed = await call(client, "confirm_template_file_upload", {
+      template: "retirement-extension",
+      uploadKey: upload.uploadKey,
+      name: "TM.7 application",
+      kind: "PDF_FORM",
+      mimeType: "application/pdf",
+      itemId: formItem?.id,
+    });
+    const draft = (
+      confirmed.data as {
+        draft: {
+          files: Array<{ id: string; sizeBytes: number }>;
+          items: Array<{ formFileId: string | null }>;
+        };
+      }
+    ).draft;
+    expect(draft.files).toEqual([expect.objectContaining({ sizeBytes: size })]);
+    expect(draft.items[0]?.formFileId).toBe(draft.files[0]?.id);
+
+    const tooBig = await call(client, "create_template_file_upload", {
+      template: "retirement-extension",
+      filename: "huge.pdf",
+      mimeType: "application/pdf",
+      sizeBytes: 201 * 1024 * 1024,
+    });
+    expect(tooBig.result.isError).toBe(true);
+
+    const runner = await connect(await as("Runner"));
+    const runnerTools = (await runner.listTools()).tools.map((t) => t.name);
+    expect(runnerTools).not.toContain("create_template_file_upload");
+  });
+
   it("lists deadlines and renders reminders", async () => {
     const owner = await as("Owner");
     await clients.createClient(owner, {

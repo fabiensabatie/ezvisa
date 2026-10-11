@@ -56,7 +56,8 @@ export function devStorageRouter(storage: LocalDiskStorage, uploadOrigins: strin
     res.send(Buffer.from(await storage.get(key)));
   });
 
-  router.put(path, cors, express.raw({ type: () => true, limit: "20mb" }), async (req, res) => {
+  // The largest upload is a template file (MAX_TEMPLATE_FILE_BYTES).
+  router.put(path, cors, express.raw({ type: () => true, limit: "200mb" }), async (req, res) => {
     const key = keyOf(req);
     if (!storage.verify("PUT", key, String(req.query.expires), String(req.query.sig))) {
       res.status(403).send("Link expired or invalid.");

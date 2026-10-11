@@ -13,6 +13,11 @@ export const ALLOWED_MIME_TYPES = [
 /** Inline uploads (base64 through MCP) are capped lower than presigned uploads. */
 export const MAX_INLINE_BYTES = 10 * 1024 * 1024;
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+/**
+ * Template forms and reference files can be large scans. They go straight to the bucket
+ * and the server only checks their size, so the cap is higher than for client documents.
+ */
+export const MAX_TEMPLATE_FILE_BYTES = 200 * 1024 * 1024;
 
 export function assertMimeType(mimeType: string): void {
   if (!(ALLOWED_MIME_TYPES as readonly string[]).includes(mimeType)) {

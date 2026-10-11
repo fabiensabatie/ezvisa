@@ -6,9 +6,16 @@ import { type Context, requireLevel, requireStorage, type Tx } from "../context.
 import { templateSummaryDto, templateVersionDto } from "../dto.js";
 import { DomainError } from "../errors.js";
 import { id, notFound, templateRef, templateWhere } from "../refs.js";
-import { assertMimeType, decodeBase64File, MAX_UPLOAD_BYTES, safeFilename } from "./files.js";
+import {
+  assertMimeType,
+  decodeBase64File,
+  MAX_TEMPLATE_FILE_BYTES,
+  safeFilename,
+} from "./files.js";
 
-const UPLOAD_URL_SECONDS = 10 * 60;
+/** Long enough to request links for a batch of files, then upload them one by one. */
+const UPLOAD_URL_SECONDS = 60 * 60;
+const MAX_TEMPLATE_FILE_MB = MAX_TEMPLATE_FILE_BYTES / 1024 / 1024;
 
 const itemKind = z.enum(["DOCUMENT", "FORM", "PAYMENT", "OTHER"]);
 const fileKind = z.enum(["PDF_FORM", "LETTER", "REFERENCE"]);
@@ -99,7 +106,12 @@ export const createTemplateFileUploadInput = z.object({
   template: templateRef,
   filename: z.string().trim().min(1).max(200),
   mimeType: z.string().trim().min(1),
-  sizeBytes: z.number().int().min(1).max(MAX_UPLOAD_BYTES).describe("Up to 20 MB"),
+  sizeBytes: z
+    .number()
+    .int()
+    .min(1)
+    .max(MAX_TEMPLATE_FILE_BYTES)
+    .describe(`File size in bytes, up to ${MAX_TEMPLATE_FILE_MB} MB`),
 });
 export const confirmTemplateFileUploadInput = z.object({
   template: templateRef,
@@ -547,12 +559,17 @@ export async function createTemplateFileUpload(
     throw new DomainError("CONFLICT", `Template ${template.slug} is archived.`);
   }
   const uploadKey = `templates/${template.id}/${randomUUID()}/${safeFilename(input.filename)}`;
+  const uploadUrl = await storage.uploadUrl(uploadKey, input.mimeType, UPLOAD_URL_SECONDS);
   return {
     uploadKey,
-    uploadUrl: await storage.uploadUrl(uploadKey, input.mimeType, UPLOAD_URL_SECONDS),
+    uploadUrl,
     method: "PUT" as const,
     headers: { "Content-Type": input.mimeType },
     expiresInSeconds: UPLOAD_URL_SECONDS,
+    // For MCP clients with a shell, such as Claude Code: the file goes from disk to the
+    // bucket without passing through the conversation.
+    curl: `curl --fail -X PUT -H "Content-Type: ${input.mimeType}" --upload-file "<path to ${input.filename.replace(/"/g, "")}>" "${uploadUrl}"`,
+    next: "PUT the file's raw bytes to uploadUrl with the Content-Type header (the curl command does that), then call confirm_template_file_upload with the same uploadKey.",
   };
 }
 
@@ -576,9 +593,12 @@ export async function confirmTemplateFileUpload(
   if (size === null) {
     throw new DomainError("NOT_FOUND", "Nothing was uploaded to that uploadKey yet.");
   }
-  if (size > MAX_UPLOAD_BYTES) {
+  if (size > MAX_TEMPLATE_FILE_BYTES) {
     await storage.delete(input.uploadKey);
-    throw new DomainError("VALIDATION", "The uploaded file is over 20 MB and was discarded.");
+    throw new DomainError(
+      "VALIDATION",
+      `The uploaded file is over ${MAX_TEMPLATE_FILE_MB} MB and was discarded.`,
+    );
   }
   return recordTemplateFile(ctx, template.id, {
     name: input.name,

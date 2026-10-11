@@ -21,7 +21,7 @@ import { useCan } from "../lib/can";
 import { fileSize, formatInstant, plural } from "../lib/format";
 import { toast } from "../lib/toast";
 import { DEADLINE_LABEL, TONE } from "../lib/tones";
-import { fileProblem, mimeOf, putFile } from "../lib/upload";
+import { fileProblem, MAX_TEMPLATE_FILE_BYTES, mimeOf, putFile } from "../lib/upload";
 import { errorMessage, type Outputs, useTRPC } from "../trpc";
 
 type Template = Outputs["templates"]["get"];
@@ -613,10 +613,10 @@ function Files({ t, editing }: { t: Template; editing: boolean }) {
             busy={false}
             multiple={false}
             title="Drop a PDF or DOCX"
-            hint="Forms the team fills in for this case type, up to 20 MB."
+            hint="Forms the team fills in for this case type, up to 200 MB."
             onFiles={([file]) => {
               if (!file) return;
-              const problem = fileProblem(file);
+              const problem = fileProblem(file, MAX_TEMPLATE_FILE_BYTES);
               if (problem) toast.error(problem);
               else setPicked(file);
             }}

@@ -76,7 +76,7 @@ export const documentTools = [
     name: "create_document_upload",
     title: "Start a large upload",
     description:
-      "For files over 10 MB (up to 20 MB): returns a link to PUT the file to directly, valid for 10 minutes. Then call confirm_document_upload.",
+      "For a file on disk, or any file over 10 MB (up to 20 MB): returns a link to PUT the file's raw bytes to directly, without base64, valid for 10 minutes. Then call confirm_document_upload.",
     input: documents.createDocumentUploadInput,
     visibleTo: canEdit("documents"),
     run: (ctx, input) => documents.createDocumentUpload(ctx, input),

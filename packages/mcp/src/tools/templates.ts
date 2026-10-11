@@ -79,10 +79,27 @@ export const templateTools = [
   defineTool({
     name: "attach_template_file",
     title: "Attach a form or file",
-    description: `Uploads a form, letter template or reference file (base64, up to 10 MB) to the draft, optionally as the form behind a checklist item. ${DRAFT_NOTE}`,
+    description: `Uploads a small form, letter template or reference file as base64 (up to 10 MB) to the draft, optionally as the form behind a checklist item. For a file on disk or anything large, use create_template_file_upload instead: no base64. ${DRAFT_NOTE}`,
     input: templates.attachTemplateFileInput,
     visibleTo: canEdit("templates"),
     run: (ctx, input) => templates.attachTemplateFile(ctx, input),
+  }),
+  defineTool({
+    name: "create_template_file_upload",
+    title: "Start a template file upload",
+    description:
+      "Step 1 of 2 for adding a form, letter template or reference file to a template without base64, up to 200 MB. Returns an uploadUrl valid for 60 minutes and a ready-made curl command: PUT the file's raw bytes there from disk with its Content-Type, then call confirm_template_file_upload with the uploadKey. For many files, request every link first, then upload and confirm each.",
+    input: templates.createTemplateFileUploadInput,
+    visibleTo: canEdit("templates"),
+    run: (ctx, input) => templates.createTemplateFileUpload(ctx, input),
+  }),
+  defineTool({
+    name: "confirm_template_file_upload",
+    title: "Finish a template file upload",
+    description: `Step 2 of 2: adds the uploaded file to the template's draft under a display name and kind, optionally as the form behind a checklist item (itemId). Fails if nothing was uploaded to the uploadKey yet. ${DRAFT_NOTE}`,
+    input: templates.confirmTemplateFileUploadInput,
+    visibleTo: canEdit("templates"),
+    run: (ctx, input) => templates.confirmTemplateFileUpload(ctx, input),
   }),
   defineTool({
     name: "remove_template_file",

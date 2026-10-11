@@ -1,4 +1,5 @@
-// Mirrors ALLOWED_MIME_TYPES and MAX_UPLOAD_BYTES in packages/core/src/services/files.ts.
+// Mirrors ALLOWED_MIME_TYPES, MAX_UPLOAD_BYTES and MAX_TEMPLATE_FILE_BYTES in
+// packages/core/src/services/files.ts.
 const TYPES: Record<string, string> = {
   pdf: "application/pdf",
   jpg: "image/jpeg",
@@ -13,6 +14,7 @@ export const ACCEPT = Object.keys(TYPES)
   .map((ext) => `.${ext}`)
   .join(",");
 export const MAX_UPLOAD_BYTES = 20 * 1024 * 1024;
+export const MAX_TEMPLATE_FILE_BYTES = 200 * 1024 * 1024;
 
 /** The file's type, from the browser or, when it does not know (often HEIC), the extension. */
 export function mimeOf(file: File): string {
@@ -23,12 +25,12 @@ export function mimeOf(file: File): string {
 }
 
 /** A reason the server would refuse the file, checked before uploading anything. */
-export function fileProblem(file: File): string | null {
+export function fileProblem(file: File, maxBytes = MAX_UPLOAD_BYTES): string | null {
   if (!Object.values(TYPES).includes(mimeOf(file))) {
     return `${file.name} is not a PDF, JPEG, PNG, WebP, HEIC or DOCX file.`;
   }
   if (file.size === 0) return `${file.name} is empty.`;
-  if (file.size > MAX_UPLOAD_BYTES) return `${file.name} is over 20 MB.`;
+  if (file.size > maxBytes) return `${file.name} is over ${maxBytes / 1024 / 1024} MB.`;
   return null;
 }
 

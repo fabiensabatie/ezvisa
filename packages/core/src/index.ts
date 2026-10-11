@@ -40,7 +40,12 @@ export * as cases from "./services/cases.js";
 export * as clients from "./services/clients.js";
 export * as dashboard from "./services/dashboard.js";
 export * as documents from "./services/documents.js";
-export { ALLOWED_MIME_TYPES, MAX_INLINE_BYTES, MAX_UPLOAD_BYTES } from "./services/files.js";
+export {
+  ALLOWED_MIME_TYPES,
+  MAX_INLINE_BYTES,
+  MAX_TEMPLATE_FILE_BYTES,
+  MAX_UPLOAD_BYTES,
+} from "./services/files.js";
 export * as reminders from "./services/reminders.js";
 export * as settings from "./services/settings.js";
 export * as team from "./services/team.js";

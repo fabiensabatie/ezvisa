@@ -557,7 +557,8 @@ type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM"; db: PrismaCl
 - On Railway, bucket egress is free but service egress is billed. Going direct to the bucket in both directions keeps file traffic off the server's bill.
 - The S3 client uses the bucket's endpoint, region `auto` and virtual-hosted URLs. It sends no server-side-encryption headers, which Railway buckets do not support. Railway encrypts objects at rest.
 - Object keys are never reused, so a file is never overwritten. This matters because Railway buckets have no versioning.
-- Size limit: 20 MB per file. Allowed types: PDF, JPEG, PNG, HEIC, WebP, DOCX.
+- Size limits: 20 MB per client document, 200 MB per template file (forms and reference scans can be large; the server only checks their size). Allowed types: PDF, JPEG, PNG, HEIC, WebP, DOCX.
+- Over MCP, files on disk never travel as base64. `create_document_upload` and `create_template_file_upload` return a presigned link and a ready-made `curl` command; a client with a shell, such as Claude Code, PUTs the file straight to the bucket, then calls the matching confirm tool. Template links last 60 minutes, so a batch of links can be requested first. Base64 tools (`upload_document`, `attach_template_file`) remain for small files, up to 10 MB.
 - Keys follow `clients/<clientId>/<documentId>/<filename>` and `templates/<templateId>/<versionId>/<fileId>/<filename>`.
 
 ---
@@ -589,7 +590,7 @@ type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM"; db: PrismaCl
 | Employees | `list_employees`, `get_employee`, `create_employee`, `update_employee`, `deactivate_employee` | team |
 | Roles | `list_roles`, `get_role`, `create_role`, `update_role`, `delete_role` (only when no employee uses it) | team |
 | Tokens | `list_tokens`, `revoke_token` | team: full |
-| Templates | `list_templates`, `get_template` (version optional), `create_template`, `update_template`, `add_template_item`, `update_template_item`, `remove_template_item`, `reorder_template_items`, `attach_template_file`, `remove_template_file`, `publish_template_version`, `archive_template` | templates |
+| Templates | `list_templates`, `get_template` (version optional), `create_template`, `update_template`, `add_template_item`, `update_template_item`, `remove_template_item`, `reorder_template_items`, `attach_template_file`, `create_template_file_upload`, `confirm_template_file_upload`, `remove_template_file`, `publish_template_version`, `archive_template` | templates |
 | Cases | `list_cases` (stage, assignee, client, `due_before`), `get_case`, `create_case`, `update_case` (assignee, due date, notes), `move_case_stage`, `close_case` (outcome) | cases, plus the stage guards |
 | Case items | `update_case_item` (status, note, linked documents) | cases: edit |
 | Documents | `list_documents`, `get_document`, `read_document`, `upload_document`, `create_document_upload`, `confirm_document_upload`, `update_document` (fields read from it), `delete_document` | documents |
