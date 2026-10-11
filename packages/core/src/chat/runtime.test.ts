@@ -330,4 +330,139 @@ describe.skipIf(!url)("chat agents", () => {
       "MISSING",
     );
   });
+  it("takes a new client from their first message to their checklist", async () => {
+    const { id } = await agentFor("CLIENTS", "Client agent");
+    await publishSampleTemplate(owner);
+    chatwoot.addConversation({
+      id: 30,
+      contact: { id: 300, name: "Mia" },
+      text: "Hi, I need my retirement extension",
+    });
+    const newClientId = (m: ScriptedModel) => (m.toolResultsOf(2)[0] as { id: string }).id;
+    const caseNumberOf = (m: ScriptedModel) => (m.toolResultsOf(4)[0] as { number: string }).number;
+    const mia = {
+      fullName: "Mia Tanaka",
+      nationality: "JP",
+      dateOfBirth: "1985-06-15",
+      passportNo: "TK1234567",
+      consentGiven: true,
+    };
+    const model = new ScriptedModel([
+      { tool: "create_client", input: { fullName: "Mia Tanaka", nationality: "JP" } },
+      { tool: "create_client", input: mia },
+      { tool: "list_templates", input: {} },
+      {
+        tool: "create_case",
+        input: (m) => ({
+          clientId: newClientId(m),
+          template: "retirement-extension",
+          assigneeId: owner.actor.employeeId,
+        }),
+      },
+      {
+        tool: "create_case",
+        input: (m) => ({ clientId: newClientId(m), template: "retirement-extension" }),
+      },
+      { tool: "create_client_upload_link", input: (m) => ({ case: caseNumberOf(m) }) },
+      { text: "Welcome Mia! Here is your checklist to upload your documents." },
+    ]);
+
+    expect(await agents(model).process(id, 30)).toMatchObject({
+      outcome: "replied",
+      handedOff: false,
+    });
+    // A new client needs a date of birth, for identity checks later.
+    expect(model.toolResultsOf(1)[0]).toContain("date of birth");
+    const client = await db.client.findUniqueOrThrow({ where: { id: newClientId(model) } });
+    // From the chat: the channel is known, but no passport number and no consent on their behalf.
+    expect(client).toMatchObject({
+      fullName: "Mia Tanaka",
+      channel: "LINE",
+      passportNo: null,
+      consentAt: null,
+    });
+    expect((await db.chatContact.findUniqueOrThrow({ where: { chatwootId: 300 } })).clientId).toBe(
+      client.id,
+    );
+    expect(model.requests[3]?.context).toContain("linked to the client Mia Tanaka");
+
+    const kase = await db.case.findFirstOrThrow({
+      where: { clientId: client.id },
+      include: { items: true },
+    });
+    expect(kase.assigneeId).toBeNull();
+    expect(kase.items.length).toBeGreaterThan(0);
+    // One open case per service: the second is refused and the agent is told to share the first.
+    expect(model.toolResultsOf(5)[0]).toContain(
+      `EZ-${kase.number} is already open for Retirement extension`,
+    );
+    expect(model.toolResultsOf(6)[0]).toMatchObject({ url: expect.stringContaining("/upload#") });
+
+    expect(chatwoot.botMessages(30, { private: true }).map((m) => m.content)).toEqual([
+      "Client desk created the client Mia Tanaka from this conversation.",
+      `Client desk opened EZ-${kase.number} (Retirement extension) for Mia Tanaka.`,
+      expect.stringMatching(
+        new RegExp(
+          `^Client desk shared the checklist for EZ-${kase.number}; the link works until \\d{4}-\\d{2}-\\d{2}\\.$`,
+        ),
+      ),
+    ]);
+    const actions = (
+      await db.auditLog.findMany({ where: { via: "CHAT" }, orderBy: { id: "asc" } })
+    ).map((a) => a.action);
+    expect(actions).toEqual(
+      expect.arrayContaining([
+        "client.created",
+        "chat.contact_linked",
+        "case.created",
+        "case.upload_link_created",
+      ]),
+    );
+  });
+
+  it("never registers someone twice, and keeps a client's identity out of the chat's reach", async () => {
+    const { id } = await agentFor("CLIENTS", "Client agent");
+    const { jo } = await twoClients();
+    chatwoot.addConversation({ id: 31, contact: { id: 310 }, text: "I am new here, Jo Maupas" });
+    const twice = new ScriptedModel([
+      {
+        tool: "create_client",
+        input: { fullName: "MAUPAS Jo", nationality: "FR", dateOfBirth: "1960-04-02" },
+      },
+      { text: "Let me check who you are first." },
+    ]);
+    await agents(twice).process(id, 31);
+    expect(twice.toolResultsOf(1)[0]).toContain("already exists");
+    expect(
+      await db.client.count({ where: { fullName: { contains: "Maupas", mode: "insensitive" } } }),
+    ).toBe(1);
+
+    chatwoot.addConversation({ id: 32, contact: { id: 320 }, text: "New phone number" });
+    const update = new ScriptedModel([
+      { tool: "check_identity", input: { full_name: "Jo Maupas", date_of_birth: "1960-04-02" } },
+      {
+        tool: "create_client",
+        input: { fullName: "Jo Again", nationality: "FR", dateOfBirth: "1990-01-01" },
+      },
+      {
+        tool: "update_client",
+        input: {
+          clientId: jo.id,
+          fullName: "Someone Else",
+          dateOfBirth: "1999-09-09",
+          phone: "+66 99 999 9999",
+        },
+      },
+      { text: "Your number is updated." },
+    ]);
+    await agents(update).process(id, 32);
+    expect(update.toolResultsOf(2)[0]).toContain("already linked to a client");
+    expect(await db.client.findUniqueOrThrow({ where: { id: jo.id } })).toMatchObject({
+      fullName: "Jo Maupas",
+      phone: "+66 99 999 9999",
+    });
+    expect(
+      (await db.client.findUniqueOrThrow({ where: { id: jo.id } })).dateOfBirth?.toISOString(),
+    ).toContain("1960-04-02");
+  });
 });

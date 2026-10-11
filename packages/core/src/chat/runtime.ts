@@ -18,6 +18,7 @@ import {
   senderKind,
 } from "./chatwoot.js";
 import type { ChatModel, ChatTool, ChatTurn } from "./model.js";
+import { nameKey } from "./names.js";
 import {
   BotCredentialsCache,
   clientPageUrl,
@@ -137,13 +138,19 @@ Identity
 Useful tools
 - list_templates and get_template: the services and the documents each needs.
 - list_cases and get_case: where the client's cases stand and what is still missing.
-- create_client_upload_link: the client's private upload page. Paste the url exactly as returned. It replaces any earlier link.
+- create_client_upload_link: the client's private upload page for a case's checklist. Paste the url exactly as returned. It replaces any earlier link for that case.
+
+Getting the client their checklist
+- First find out what they need and match it to one template (list_templates, get_template). If you are not sure which service fits, ask; if it is still unclear or needs judgement, hand over.
+- If the client already has an open case for that service (list_cases), share that case's checklist with create_client_upload_link. Never open a second case for the same service.
+- Otherwise, say which service you will open and wait for their yes, then open it with create_case (clientId and the template's slug) and share its checklist with create_client_upload_link.
+- Someone who is not a client yet: after check_identity fails or they say they are new, ask for their full name as in the passport, nationality and date of birth, confirm the service, then create_client. That links this conversation to them; open their case and share the checklist the same way.
+- Never ask for a passport number in the chat. Never say the client accepted the privacy notice: they do that on the upload page.
 
 Hand the conversation to the team (hand_to_team) when
 - the client asks for a person, a price that is not in the agency notes, a refund or a discount, or complains;
 - the question needs judgement: eligibility you are not sure of, an overstay, a refused application, a criminal record, a lost passport, a change of visa type;
 - something is urgent: a deadline within 3 days, an appointment today;
-- someone who is not a client yet wants to start: ask what they need and when their stay ends, then hand over;
 - you are unsure, or the client is unhappy with your answers.
 Then tell the client that someone from ${agency} will reply soon.
 
@@ -163,20 +170,8 @@ How to work
 - Do what the person asks with the tools. Look things up before answering.
 - Before anything hard to undo or that reaches a client (closing or cancelling a case, deleting, writing to a client, revoking access), say exactly what you will do and wait for their yes.
 - Only a person can mark a checklist item VERIFIED or approve a pack: say so, and point them to the dashboard.
+- To get a client their checklist: open a case from the right template with create_case if they have none open for that service, otherwise use the open one; then create_client_upload_link, and send_chat_message with the clientId to post the link in the client's own conversation once the person agrees.
 - If a tool refuses for lack of permission, say so plainly. Hand the conversation to the team (hand_to_team) only when asked to.`;
-}
-
-/** Lower case, accents removed, words sorted: "Maupas  Jo" matches "jo maupas". */
-function nameKey(name: string): string {
-  return name
-    .normalize("NFKD")
-    .replace(/\p{Diacritic}/gu, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\s]/gu, " ")
-    .split(/\s+/)
-    .filter(Boolean)
-    .sort()
-    .join(" ");
 }
 
 /** The last nine digits, for comparing Thai and foreign ways of writing one number. */
@@ -252,6 +247,52 @@ const refusal = (message: string): AgentToolOutcome => ({
   content: [{ type: "text", text: message }],
   isError: true,
 });
+
+/** A tool's JSON result, when it has one. */
+function parsed(outcome: AgentToolOutcome): Record<string, unknown> | null {
+  const first = outcome.content[0];
+  if (first?.type !== "text") return null;
+  try {
+    const value = JSON.parse(first.text);
+    return value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Chatwoot's channel as a client's preferred channel in EzVisa. */
+function clientChannel(channel: string | null | undefined) {
+  if (!channel) return null;
+  if (/Line/i.test(channel)) return "LINE" as const;
+  if (/Whatsapp|Twilio/i.test(channel)) return "WHATSAPP" as const;
+  if (/FacebookPage|Instagram/i.test(channel)) return "MESSENGER" as const;
+  if (/Email/i.test(channel)) return "EMAIL" as const;
+  if (/Sms/i.test(channel)) return "PHONE" as const;
+  return null;
+}
+
+const str = (value: unknown) => (typeof value === "string" ? value : "");
+
+/** Private notes telling the team what an agent set up in the conversation. */
+const TEAM_NOTES: Record<
+  string,
+  (
+    agent: string,
+    input: Record<string, unknown>,
+    result: Record<string, unknown> | null,
+  ) => string | null
+> = {
+  create_client: (agent, _input, result) =>
+    result ? `${agent} created the client ${str(result.fullName)} from this conversation.` : null,
+  create_case: (agent, _input, result) => {
+    if (!result) return null;
+    const template = (result.template ?? {}) as { name?: unknown };
+    const client = (result.client ?? {}) as { fullName?: unknown };
+    return `${agent} opened ${str(result.number)} (${str(template.name)}) for ${str(client.fullName)}.`;
+  },
+  create_client_upload_link: (agent, input, result) =>
+    `${agent} shared the checklist for ${str(input.case)}${result?.expiresAt ? `; the link works until ${str(result.expiresAt).slice(0, 10)}` : ""}.`,
+};
 
 type LoadedAgent = NonNullable<Awaited<ReturnType<typeof loadAgent>>>;
 
@@ -540,13 +581,34 @@ export class ChatAgents {
             if (checked.clientId) clientId = checked.clientId;
             outcome = text(checked.result);
           } else if (agent.audience === "CLIENTS") {
-            const scoped = await scopeToClient(db, call.name, input, clientId);
+            const scoped = await scopeToClient(db, call.name, input, {
+              clientId,
+              channel: clientChannel(conversation.meta.channel),
+              phone: conversation.meta.sender.phone_number || null,
+            });
             outcome =
               "refused" in scoped
                 ? refusal(scoped.refused)
                 : await this.deps.toolbox.run(ctx(actor), call.name, scoped.input);
+            // A client created here is the person writing: the conversation is now theirs.
+            const created =
+              call.name === "create_client" && !outcome.isError ? parsed(outcome) : null;
+            if (typeof created?.id === "string") {
+              clientId = created.id;
+              await this.linkCreatedClient(ctx(actor), contact.id, created.id);
+            }
           } else {
             outcome = await this.deps.toolbox.run(ctx(actor), call.name, input);
+          }
+          if (!outcome.isError && TEAM_NOTES[call.name]) {
+            const note = TEAM_NOTES[call.name]?.(agent.name, input, parsed(outcome));
+            if (note) {
+              await chat.api.sendMessage(
+                conversationId,
+                { content: note, private: true },
+                creds.token,
+              );
+            }
           }
         } catch (error) {
           outcome = refusal(
@@ -655,6 +717,26 @@ export class ChatAgents {
       clientPageUrl(this.deps.appUrl, matches[0].id),
     );
     return linked;
+  }
+
+  /** Links the conversation to the client an agent just created for the person writing. */
+  private async linkCreatedClient(ctx: Context, contactId: string, clientId: string) {
+    const { db } = this.deps;
+    const contact = await db.chatContact.update({
+      where: { id: contactId },
+      data: { clientId, linkedAt: this.now(), linkedById: null, failedChecks: 0 },
+    });
+    await audit(db, ctx, {
+      action: "chat.contact_linked",
+      entity: "Client",
+      entityId: clientId,
+      after: { chatwootContactId: contact.chatwootId, by: "created from the chat" },
+    });
+    await showClientInChatwoot(
+      this.deps.chat,
+      contact.chatwootId,
+      clientPageUrl(this.deps.appUrl, clientId),
+    );
   }
 
   /** Full name and date of birth against EzVisa's clients; three failures a day lock it. */

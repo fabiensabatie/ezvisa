@@ -125,9 +125,9 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
   {
     name: "Client agent",
     description:
-      "For chat agents answering clients: reads the identified client's cases and documents and shares their upload link.",
+      "For chat agents answering clients: registers new clients, opens their cases from a template and shares the checklist, on one identified client at a time.",
     permissions: {
-      clients: "view",
+      clients: "edit",
       cases: "edit",
       documents: "view",
       templates: "view",

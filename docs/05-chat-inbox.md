@@ -5,7 +5,7 @@ Clients write on LINE, Messenger and WhatsApp. All of it lands in one inbox, a s
 **Agents** answer first. You create them on the **Agents** page:
 - Each has a name, instructions, a model and the inboxes it answers.
 - Each has a role, which decides which of EzVisa's MCP tools it may use, exactly as for an MCP token.
-- A client agent explains services, checks who the client is, then works on that client's records only: case status, upload links, and anything else its role allows.
+- A client agent explains services, checks who the client is (or registers someone new), opens the case their need calls for, or shares the open one, and sends its checklist. It works on that one client's records only.
 - A team agent answers people on the team in a staff chat, with no more than their own permissions.
 - Every agent hands over to the team when it should.
 
@@ -69,7 +69,7 @@ On the **Agents** page (owners):
 1. **New agent.** For the LINE channel, for example:
    - name "LINE front desk";
    - talks to **Clients**;
-   - role **Client agent**, which can read the identified client's cases and documents and share their upload link;
+   - role **Client agent**, which can register new clients, open their cases from a template, read their cases and documents, and share the checklist;
    - instructions such as "Greet warmly, find out what the client needs, send their upload link when documents are missing."
 2. **Inboxes.** Tick the LINE inbox. EzVisa creates the agent's bot in Chatwoot and assigns it; new conversations there go to the agent first. An inbox has one agent at a time.
 3. For a staff chat, for example a LINE group for the team in its own inbox, create a second agent that talks to **The team**, with a role such as **Assistant (MCP)**. Then, in the Inbox, open each colleague's conversation and link it to them (**Or a team member**). The agent answers only linked people, and never with more permissions than they have themselves.
@@ -100,6 +100,16 @@ The Chatwoot apps for iOS and Android connect to the same address. In EzVisa, tu
 - After three failed checks in a day it stops trying and hands over.
 - The team can also link a conversation from the Inbox, or from the client's page.
 - Once a contact is linked, Chatwoot shows an **EzVisa client** link on the contact, so whoever answers in Chatwoot is one click from the case.
+
+**Checklists from the chat.** A client agent works out which service the person needs from the templates, and asks when it is unsure.
+- **An identified client with an open case for that service:** the agent shares that case's checklist (`create_client_upload_link`). A second case for the same service is refused by the server, not only by the instructions.
+- **An identified client without one:** the agent says which service it will open and waits for a yes, then opens the case from the template (`create_case`), which creates the checklist, and shares it.
+- **Someone new:** after the identity check fails or they say they are new, the agent asks for the full name as in the passport, nationality and date of birth, and confirms the service. It then registers them (`create_client`), which links the conversation to the new client, and opens and shares the case the same way.
+  - No passport number is taken in the chat, and consent is never recorded for them: the client accepts the privacy notice on the upload page.
+  - Someone already registered under the same name and date of birth cannot be registered twice: the agent is told to check their identity instead.
+- Through the chat, a client can change only how to reach them (email, phone, channel, address), never their name, date of birth or passport details.
+- Each time an agent registers a client, opens a case or shares a checklist, it leaves a private note in the conversation for the team, and the activity feed shows it under the agent's name. Cases opened by an agent have no assignee: assign them from the case page.
+- Team agents can do the same for any client their colleague may handle, and post the link in that client's own conversation (`send_chat_message`) once the colleague agrees.
 
 **What agents can do.** An agent uses EzVisa's MCP tools, the same ones Claude uses over MCP, filtered by its role.
 - A **client agent** is limited to the identified client: a tool on someone else's case or document is refused, lists are filtered to that client, and tools that cannot be limited are not offered (listing every client, reminders, the team, template editing, the inbox).

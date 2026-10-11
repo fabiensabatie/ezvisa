@@ -663,7 +663,12 @@ Clients write on LINE, Messenger and WhatsApp. A self-hosted Chatwoot (Railway p
     - case and document references must belong to them;
     - lists are forced to that client;
     - tools that cannot be scoped are not offered: listing all clients, reminders, team, template editing and inbox tools.
-  - Before identification only templates and `whoami` work.
+  - Before identification only templates, `whoami` and `create_client` work.
+  - Rules beyond ownership:
+    - `create_client` only while the conversation is unlinked, with a date of birth, never for a name and date of birth already registered. It keeps contact fields only (no passport number, never consent) and defaults the channel and phone from the conversation. On success the conversation is linked to the new client.
+    - `create_case` refuses a second open case of the same template for the client, naming the open one to share instead, and drops any assignee.
+    - `update_client` keeps contact fields only: email, phone, channel, handle, address.
+  - After `create_client`, `create_case` or `create_client_upload_link`, the agent posts a private note in the conversation for the team.
 - **Team agents** answer only chat contacts an owner linked to an active employee, with the intersection of the agent's role and that employee's role.
 - **Handing over.** An agent hands over on request, on judgement calls, on urgency, after 30 replies in a day, or when there is no API key. It posts a private note with the reason and a summary, sets the conversation to *open*, and sends a push notification (without client details) that opens `/inbox/<id>` to people with clients: edit.
 - **Stepping back.** In Chatwoot's community edition a person replying leaves a conversation *pending*. If someone on the team wrote in the last 12 hours, the agent stays silent and opens the conversation. When a conversation goes back to *pending*, the agent posts a private note ("answering again"), and earlier replies from the team no longer silence it.

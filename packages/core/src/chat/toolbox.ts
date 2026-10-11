@@ -2,7 +2,8 @@ import type { Db } from "@ezvisa/db";
 import type { Context } from "../context.js";
 import { isDomainError } from "../errors.js";
 import type { Permissions } from "../permissions.js";
-import { caseWhere } from "../refs.js";
+import { caseNumber, caseWhere, templateWhere } from "../refs.js";
+import { nameKey } from "./names.js";
 
 export type AgentToolSpec = {
   name: string;
@@ -31,8 +32,18 @@ export interface AgentToolbox {
 
 // ---- client agents: one client's records, nothing else ---------------------------------------
 
+/** What a client agent's tool call is checked against. */
+export type ClientScope = {
+  /** The client this conversation is linked to, once identified. */
+  clientId: string | null;
+  /** The conversation's channel in EzVisa's terms, for new clients. */
+  channel: "LINE" | "WHATSAPP" | "MESSENGER" | "EMAIL" | "PHONE" | null;
+  /** The contact's phone number, as the channel reports it (WhatsApp). */
+  phone: string | null;
+};
+
 type Checked = { input: Record<string, unknown> } | { refused: string };
-type Rule = (db: Db, input: Record<string, unknown>, clientId: string | null) => Promise<Checked>;
+type Rule = (db: Db, input: Record<string, unknown>, scope: ClientScope) => Promise<Checked>;
 
 const NOT_IDENTIFIED = "The client is not identified yet. Use check_identity first.";
 const NOT_THEIRS = "That is not one of this client's records.";
@@ -54,31 +65,37 @@ async function documentOwner(db: Db, id: unknown): Promise<string | null> {
   return row?.clientId ?? null;
 }
 
+/** Keeps only `fields` of the input. */
+const only = (input: Record<string, unknown>, fields: readonly string[]) =>
+  Object.fromEntries(Object.entries(input).filter(([key]) => fields.includes(key)));
+
 /** No client data involved: open before the client is identified. */
 const open: Rule = async (_db, input) => ({ input });
 
 /** `field` must name the identified client. */
 const clientField =
   (field: string): Rule =>
-  async (_db, input, clientId) => {
-    if (!clientId) return { refused: NOT_IDENTIFIED };
-    return input[field] === clientId ? { input } : { refused: NOT_THEIRS };
+  async (_db, input, scope) => {
+    if (!scope.clientId) return { refused: NOT_IDENTIFIED };
+    return input[field] === scope.clientId ? { input } : { refused: NOT_THEIRS };
   };
 
 /** The case in `field` must be the identified client's; with `optional`, it may be absent. */
 const caseField =
   (field: string, optional = false): Rule =>
-  async (db, input, clientId) => {
+  async (db, input, scope) => {
     if (optional && input[field] === undefined) return { input };
-    if (!clientId) return { refused: NOT_IDENTIFIED };
-    return (await caseOwner(db, input[field])) === clientId ? { input } : { refused: NOT_THEIRS };
+    if (!scope.clientId) return { refused: NOT_IDENTIFIED };
+    return (await caseOwner(db, input[field])) === scope.clientId
+      ? { input }
+      : { refused: NOT_THEIRS };
   };
 
 const documentField =
   (field: string): Rule =>
-  async (db, input, clientId) => {
-    if (!clientId) return { refused: NOT_IDENTIFIED };
-    return (await documentOwner(db, input[field])) === clientId
+  async (db, input, scope) => {
+    if (!scope.clientId) return { refused: NOT_IDENTIFIED };
+    return (await documentOwner(db, input[field])) === scope.clientId
       ? { input }
       : { refused: NOT_THEIRS };
   };
@@ -86,22 +103,107 @@ const documentField =
 /** Lists are filtered to the identified client, whatever the agent asked. */
 const forceClient =
   (field: string): Rule =>
-  async (_db, input, clientId) => {
-    if (!clientId) return { refused: NOT_IDENTIFIED };
-    return { input: { ...input, [field]: clientId } };
+  async (_db, input, scope) => {
+    if (!scope.clientId) return { refused: NOT_IDENTIFIED };
+    return { input: { ...input, [field]: scope.clientId } };
   };
 
 const all =
   (...rules: Rule[]): Rule =>
-  async (db, input, clientId) => {
+  async (db, input, scope) => {
     let current = input;
     for (const rule of rules) {
-      const checked = await rule(db, current, clientId);
+      const checked = await rule(db, current, scope);
       if ("refused" in checked) return checked;
       current = checked.input;
     }
     return { input: current };
   };
+
+/** What a new client may give in a chat: no passport number, and never consent on their behalf. */
+const NEW_CLIENT_FIELDS = [
+  "fullName",
+  "nationality",
+  "dateOfBirth",
+  "email",
+  "phone",
+  "channel",
+  "channelHandle",
+  "address",
+  "visaType",
+  "stayUntil",
+  "nextReportDue",
+] as const;
+
+/**
+ * Someone who is not a client yet becomes one: only while the conversation is not linked,
+ * with a date of birth (for later identity checks), and never a second record for someone
+ * already known. Consent is given by the client on the upload page, not here.
+ */
+const createClient: Rule = async (db, input, scope) => {
+  if (scope.clientId) {
+    return { refused: "This conversation is already linked to a client: work on that client." };
+  }
+  const dob = typeof input.dateOfBirth === "string" ? input.dateOfBirth : "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dob) || typeof input.fullName !== "string") {
+    return {
+      refused:
+        "A new client needs their full name as in the passport, nationality and date of birth (YYYY-MM-DD).",
+    };
+  }
+  const sameBirthday = await db.client.findMany({
+    where: { deletedAt: null, dateOfBirth: new Date(`${dob}T00:00:00.000Z`) },
+    select: { fullName: true },
+  });
+  if (sameBirthday.some((c) => nameKey(c.fullName) === nameKey(input.fullName as string))) {
+    return {
+      refused:
+        "A client with this name and date of birth already exists. Use check_identity with the same details instead.",
+    };
+  }
+  return {
+    input: {
+      ...only(input, NEW_CLIENT_FIELDS),
+      channel: input.channel ?? scope.channel ?? undefined,
+      phone: input.phone ?? scope.phone ?? undefined,
+    },
+  };
+};
+
+/** A client keeps their identity details; through chat they can change how to reach them. */
+const updateClient: Rule = async (db, input, scope) => {
+  const checked = await clientField("clientId")(db, input, scope);
+  if ("refused" in checked) return checked;
+  return {
+    input: only(input, ["clientId", "email", "phone", "channel", "channelHandle", "address"]),
+  };
+};
+
+/**
+ * Opens a case (and so its checklist) for the identified client, unless one is already open
+ * for the same service: then that one is shared instead. Agents do not assign the team.
+ */
+const createCase: Rule = async (db, input, scope) => {
+  const checked = await clientField("clientId")(db, input, scope);
+  if ("refused" in checked) return checked;
+  const ref = typeof input.template === "string" ? input.template : "";
+  const template = ref ? await db.template.findUnique({ where: templateWhere(ref) }) : null;
+  if (template) {
+    const existing = await db.case.findFirst({
+      where: {
+        clientId: scope.clientId as string,
+        stage: { notIn: ["DONE", "CANCELLED"] },
+        templateVersion: { templateId: template.id },
+      },
+    });
+    if (existing) {
+      return {
+        refused: `${caseNumber(existing.number)} is already open for ${template.name}. Share that case's checklist with create_client_upload_link instead of opening another.`,
+      };
+    }
+  }
+  return { input: only(input, ["clientId", "template", "dueDate", "notes"]) };
+};
 
 /**
  * The tools a client agent may use, each with how it is tied to the identified client.
@@ -114,11 +216,12 @@ const CLIENT_SCOPE: Record<string, Rule> = {
   get_template: open,
   get_template_file: caseField("case", true),
   read_template_file: caseField("case", true),
+  create_client: createClient,
   get_client: clientField("clientId"),
-  update_client: clientField("clientId"),
+  update_client: updateClient,
   list_cases: forceClient("clientId"),
   get_case: caseField("case"),
-  create_case: clientField("clientId"),
+  create_case: createCase,
   update_case: caseField("case"),
   move_case_stage: caseField("case"),
   update_case_item: caseField("case"),
@@ -144,9 +247,9 @@ export async function scopeToClient(
   db: Db,
   name: string,
   input: Record<string, unknown>,
-  clientId: string | null,
+  scope: ClientScope,
 ): Promise<Checked> {
   const rule = CLIENT_SCOPE[name];
   if (!rule) return { refused: `${name} is not available in a client conversation.` };
-  return rule(db, input, clientId);
+  return rule(db, input, scope);
 }

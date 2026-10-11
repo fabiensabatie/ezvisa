@@ -212,7 +212,12 @@ export function incomingWebhook(conversation: ChatwootConversation, text: string
 
 type ScriptStep =
   | { text: string }
-  | { tool: string; input: Record<string, unknown>; text?: string };
+  | {
+      tool: string;
+      /** Or a function of the model so far, for ids returned by earlier tools. */
+      input: Record<string, unknown> | ((model: ScriptedModel) => Record<string, unknown>);
+      text?: string;
+    };
 
 /**
  * A model that answers from a script, one step per call: a tool call or a final text.
@@ -233,7 +238,12 @@ export class ScriptedModel implements ChatModel {
     if ("tool" in step) {
       const content = [
         ...(step.text ? [{ type: "text", text: step.text, citations: null }] : []),
-        { type: "tool_use", id: `call-${this.calls}`, name: step.tool, input: step.input },
+        {
+          type: "tool_use",
+          id: `call-${this.calls}`,
+          name: step.tool,
+          input: typeof step.input === "function" ? step.input(this) : step.input,
+        },
       ] as ChatBlock[];
       return { content, stopReason: "tool_use", usage };
     }
@@ -294,6 +304,24 @@ const FAKE_TOOLS: FakeTool[] = [
     resource: "clients",
     level: "view",
     run: (ctx, i) => clients.getClient(ctx, i as never),
+  },
+  {
+    name: "create_client",
+    resource: "clients",
+    level: "edit",
+    run: (ctx, i) => clients.createClient(ctx, i as never),
+  },
+  {
+    name: "update_client",
+    resource: "clients",
+    level: "edit",
+    run: (ctx, i) => clients.updateClient(ctx, i as never),
+  },
+  {
+    name: "create_case",
+    resource: "cases",
+    level: "edit",
+    run: (ctx, i) => cases.createCase(ctx, i as never),
   },
   {
     name: "list_cases",
