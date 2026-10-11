@@ -45,15 +45,25 @@ if (storage instanceof S3Storage && uploadOrigins.length > 0) {
     .then(() =>
       console.log(JSON.stringify({ level: "info", msg: "bucket CORS set", uploadOrigins })),
     )
-    .catch((error: unknown) =>
+    .catch((error: unknown) => {
+      // S3 errors and network failures often have an empty message: log what identifies them.
+      const e = error as Error & {
+        code?: string;
+        $metadata?: { httpStatusCode?: number };
+        errors?: Array<{ code?: string; message?: string }>;
+      };
       console.log(
         JSON.stringify({
           level: "warn",
           msg: "could not set bucket CORS; browser uploads may fail",
-          error: error instanceof Error ? error.message : String(error),
+          error: e?.name ?? String(error),
+          message: e?.message || e?.errors?.[0]?.message || null,
+          code: e?.code ?? e?.errors?.[0]?.code ?? null,
+          httpStatus: e?.$metadata?.httpStatusCode ?? null,
+          endpoint: process.env.S3_ENDPOINT ?? null,
         }),
-      ),
-    );
+      );
+    });
 }
 
 // The origin people and MCP connectors use. It issues OAuth tokens, so it must be stable.
