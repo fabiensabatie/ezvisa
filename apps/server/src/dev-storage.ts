@@ -19,8 +19,8 @@ function keyOf(req: Request): string {
 
 /**
  * Serves the signed links of LocalDiskStorage. Mounted only in development, when no
- * S3 bucket is configured. Like a bucket with a CORS rule, it accepts PUTs from the
- * dashboard's origin, which in development is Vite's port.
+ * S3 bucket is configured. Like a bucket with a CORS rule, it accepts PUTs and GETs from
+ * the dashboard's origin, which in development is Vite's port.
  */
 export function devStorageRouter(storage: LocalDiskStorage, uploadOrigins: string[] = []): Router {
   const router = express.Router();
@@ -30,7 +30,7 @@ export function devStorageRouter(storage: LocalDiskStorage, uploadOrigins: strin
     const origin = req.header("origin");
     if (origin && uploadOrigins.includes(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
-      res.setHeader("Access-Control-Allow-Methods", "PUT");
+      res.setHeader("Access-Control-Allow-Methods", "PUT, GET, HEAD");
       res.setHeader("Access-Control-Allow-Headers", "content-type");
       res.setHeader("Access-Control-Max-Age", "3000");
     }
@@ -42,7 +42,7 @@ export function devStorageRouter(storage: LocalDiskStorage, uploadOrigins: strin
     res.sendStatus(204);
   });
 
-  router.get(path, async (req, res) => {
+  router.get(path, cors, async (req, res) => {
     const key = keyOf(req);
     if (!storage.verify("GET", key, String(req.query.expires), String(req.query.sig))) {
       res.status(403).send("Link expired or invalid.");

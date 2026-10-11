@@ -16,6 +16,7 @@
     "@tanstack/react-router": "^1.170.41",
     "@trpc/client": "^11.19.0",
     "@trpc/tanstack-react-query": "^11.19.0",
+    "pdfjs-dist": "^5.4.296",
     "react": "^19.3.0",
     "react-dom": "^19.3.0"
   },

@@ -3,6 +3,8 @@ import {
   ChatAgents,
   chatFromEnv,
   chatModelsFromEnv,
+  FormPreparer,
+  formAiFromEnv,
   LocalDiskStorage,
   loadRootEnv,
   S3Storage,
@@ -84,6 +86,10 @@ if (!publicUrl) {
 // Web Push keys are generated on first use and kept in the database.
 const push = new WebPushSender(db, vapidSubject(publicUrl));
 
+// Forms: Claude makes template PDFs fillable and fills each case's copy for a person to check.
+const forms = formAiFromEnv();
+const formJobs = storage ? new FormPreparer({ db, storage, ai: forms }) : null;
+
 // The shared inbox and its agents. Both need Chatwoot; answering needs a public URL too.
 const chat = chatFromEnv();
 const agents =
@@ -96,6 +102,8 @@ const agents =
         storage,
         push,
         appUrl: publicUrl,
+        forms,
+        formJobs,
       })
     : null;
 console.log(
@@ -107,6 +115,7 @@ console.log(
     model: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
   }),
 );
+console.log(JSON.stringify({ level: "info", msg: "forms", claude: forms?.name ?? null }));
 
 const app = createApp({
   db,
@@ -117,11 +126,15 @@ const app = createApp({
   publicUrl,
   chat,
   agents,
+  forms,
+  formJobs,
   webDir: production ? webDir : undefined,
 });
 
 const server = app.listen(port, () => {
   console.log(JSON.stringify({ level: "info", msg: "server listening", port, version }));
+  // Template PDFs attached before forms were filled, or whose setup failed, are set up now.
+  if (forms) formJobs?.setUpPending();
 });
 
 function shutdown(signal: string) {

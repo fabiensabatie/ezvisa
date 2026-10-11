@@ -22,6 +22,7 @@ export const ALL_TABLES = [
   "Setting",
   "Document",
   "CaseItem",
+  "CaseForm",
   "CaseShareLink",
   "Case",
   "TemplateItem",

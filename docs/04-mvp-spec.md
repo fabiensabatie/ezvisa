@@ -20,7 +20,7 @@
 
 - Proper user accounts, passwords, OAuth or SSO. The token model is built so these can be added later without changing the data model.
 - Server-side AI pipelines. In the MVP the intelligence comes from the MCP client, which reads documents and writes results back through tools (section 7.5).
-- PDF form pre-fill, automatic message delivery, client portal, payments, lead generation, multiple offices, Thai UI. All are listed in the roadmap (section 13).
+- Automatic message delivery, client portal, payments, lead generation, multiple offices, Thai UI. All are listed in the roadmap (section 13).
 
 ---
 
@@ -302,8 +302,25 @@ model TemplateFile {
   storageKey String          @unique
   mimeType   String
   sizeBytes  Int
-  fieldMap   Json?           // reserved for form pre-fill (roadmap)
-  items      TemplateItem[]
+  fieldMap    Json?          // how EzVisa fills it: fields, sources, formats (section 6.7)
+  fillableKey String?        // the fillable copy EzVisa made of a flat PDF
+  items       TemplateItem[]
+  caseForms   CaseForm[]
+}
+
+/// A template form filled for one case. The values are the record; the PDF is made from them.
+model CaseForm {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  caseId         String         @db.Uuid
+  templateFileId String         @db.Uuid
+  values         Json           @default("{}") // { field: { value, by: source | agent | person, from } }
+  status         CaseFormStatus @default(DRAFT) // DRAFT, CHECKED
+  pdfKey         String?
+  preparedAt     DateTime?
+  checkedById    String?        @db.Uuid
+  checkedAt      DateTime?
+  updatedById    String?        @db.Uuid
+  @@unique([caseId, templateFileId])
 }
 
 model Case {
@@ -685,6 +702,16 @@ Clients write on LINE, Messenger and WhatsApp. A self-hosted Chatwoot (Railway p
   - Replies are posted with the administrator's token, so Chatwoot counts them as the team's.
   - Linking a client writes an "EzVisa client" link on the Chatwoot contact.
 
+### 6.7 Forms
+
+Every PDF form and letter of a template is filled for each case and checked by a person (guide: `docs/06-forms.md`).
+
+- **Setup.** Attaching a PDF form or letter sets it up in the background. A PDF with AcroForm fields keeps them. On a flat PDF, Claude locates the blanks (fractions of the page) and EzVisa adds fields there with pdf-lib, storing a fillable copy (`fillableKey`) beside the original. Claude then describes each field: label, source (a record key, `ai`, or none), format and hint. The result is the file's `fieldMap`. People with templates: edit adjust it, and on an added-field PDF move, add or remove boxes, which regenerates the copy.
+- **Filling.** `prepareCaseForms` resolves record sources, reads the client's unread documents with Claude (stored on `Document.extracted` as flat facts, as `update_document` writes them), asks Claude for the `ai` fields from those facts only, keeps values a person entered, and renders the PDF (Sarabun, fields kept fillable) to `cases/<case>/forms/<file>/<uuid>.pdf`. A fill that changes nothing keeps a checked form checked.
+- **When.** A background runner (`FormPreparer`, one run at a time per case or file) fills the forms when the client's last required checklist upload arrives and when the case moves to DRAFTING. It acts as the assistant employee with cases and templates edit only, `via: SYSTEM`. Dashboard and MCP requests queue on it too and are polled.
+- **Checking.** Any edit sets the form to DRAFT. `checkCaseForm` needs a person (`requireHuman`). Everything is audited: `template.form_set_up`, `template.form_updated`, `document.extracted`, `case_form.prepared`, `case_form.updated`, `case_form.checked`, `case_form.read`.
+- **Claude.** `FORMS_MODEL` (Opus 5.5 by default) with structured outputs and the server-side fallback beta; high effort to set forms up, medium to read documents and fill.
+
 ---
 
 ## 7. MCP server
@@ -719,6 +746,7 @@ Clients write on LINE, Messenger and WhatsApp. A self-hosted Chatwoot (Railway p
 | Case items | `update_case_item` (status, note, linked documents) | cases: edit |
 | Documents | `list_documents`, `get_document` (link and save-to-disk command), `read_document` (content, up to 10 MB), `upload_document`, `create_document_upload`, `confirm_document_upload`, `update_document` (fields read from it), `delete_document` | documents |
 | Reminders | `list_deadlines` (`within_days`), `list_reminders` (status), `mark_reminder_sent`, `skip_reminder`, `get_reminder_rules`, `update_reminder_rule` | reminders |
+| Forms | `get_template_form`, `set_up_template_form`, `update_template_form`, `list_case_forms`, `prepare_case_forms`, `get_case_form`, `read_case_form` (the filled PDF), `update_case_form`, `check_case_form` (people only) | templates: edit to set up; cases: view / edit |
 | Shared inbox | `list_conversations`, `get_conversation`, `send_chat_message` (or a private note), `link_chat_contact`, `hand_conversation` (to the agent, the team, or resolved), `link_team_member` | clients: view / edit; team: full to link a team member |
 
 Token creation is deliberately not an MCP tool in the MVP. A leaked assistant token must not be able to mint new tokens.
@@ -795,13 +823,13 @@ Each screen matches a frame of the mockup.
 | `/inbox`, `/inbox/:id` | Shared inbox: conversations by status and inbox; a conversation with its messages, the reply box and who is writing (client and open cases, or team member) | `chat.*` |
 | `/agents` | Agents: audience, role, model, instructions, inboxes | `agents.*` |
 | `/cases` | Case board by stage | `cases.list` |
-| `/cases/:number` | Case detail: stage tracker, checklist, documents, forms, actions | `cases.get`, `caseItems.update`, `cases.moveStage` |
+| `/cases/:number` | Case detail: stage tracker, checklist, documents, filled forms to review and check, actions | `cases.get`, `caseItems.update`, `cases.moveStage`, `forms.*` |
 | `/clients` | Client table with filters | `clients.list` |
 | `/clients/:id` | Client profile, deadlines, documents, cases, linked chat conversations (not in the mockup yet) | `clients.get`, `chat.clientChats` |
 | `/reminders` | Upcoming expiries, schedule, message preview | `reminders.list`, `reminders.markSent` |
 | `/team` | People, roles and permission matrix | `employees.list`, `roles.list` |
 | `/templates` | Template cards | `templates.list` |
-| `/templates/:slug` | Checklist, forms and files, known failures, draft and publish | `templates.get`, template mutations |
+| `/templates/:slug` | Checklist, forms and files (with the fields EzVisa fills), known failures, draft and publish | `templates.get`, template mutations, `forms.template` |
 | `/settings` | Theme colour, shared inbox (connection, notes every agent reads, pause, usage), tokens (list and revoke), MCP connection details | `settings.*`, `chat.overview`, `tokens.*` |
 
 M2 delivered every screen above in read-only form. M3 adds the write side, each control shown only to roles that can use it:
@@ -809,10 +837,10 @@ M2 delivered every screen above in read-only form. M3 adds the write side, each 
 | Screen | Actions |
 |---|---|
 | Cases | New case: client, template, assignee, due date |
-| Case detail | The next stage in one click ("Start collecting", "Move to drafting", "Send for validation", "Approve the pack", "Log the outcome"); change stage or cancel with a note; edit assignee, due date and notes; per checklist item a one-tap "Verify" or "Upload", and a menu to set any status with its note and documents; upload documents to the case; "Share checklist with client": choose how long the link works, copy the link and message, or stop the current link |
+| Case detail | The next stage in one click ("Start collecting", "Move to drafting", "Send for validation", "Approve the pack", "Log the outcome"); change stage or cancel with a note; edit assignee, due date and notes; per checklist item a one-tap "Verify" or "Upload", and a menu to set any status with its note and documents; upload documents to the case; Forms: "Fill forms", then per form "Review" (the PDF beside its fields, edit, save, "Mark checked") and download; "Share checklist with client": choose how long the link works, copy the link and message, or stop the current link |
 | Clients, client detail | New client, edit, record or withdraw consent, open a case, upload documents, link or unlink a chat conversation |
 | Reminders | Send now, edit the message, copy, mark sent, skip; open a case from a deadline; edit the schedule |
-| Templates, template detail | New template; edit template (the first change starts a draft); add, edit, reorder and remove items, and tick the ones the client uploads; attach forms; edit known failures; publish with notes or discard the draft; archive |
+| Templates, template detail | New template; edit template (the first change starts a draft); add, edit, reorder and remove items, and tick the ones the client uploads; attach forms; per PDF form "Fields": sources, formats and hints, boxes on scans, "Start over"; edit known failures; publish with notes or discard the draft; archive |
 | Team | Add an employee, then create their token; edit; deactivate |
 | Settings | Make a colour the agency colour; the name in messages; pause the agents, edit the notes they all read; create and revoke access tokens |
 | Inbox | Reply, private note, take over, hand to agent, resolve; link the person to a client or (owners) a team member |
@@ -863,7 +891,8 @@ pnpm dev
 | `CHATWOOT_URL` | server (shared inbox) | The Chatwoot service's public address |
 | `CHATWOOT_API_TOKEN` | server (shared inbox) | Set by hand: a Chatwoot administrator's access token |
 | `CHATWOOT_ACCOUNT_ID` | server (optional) | Unset: account 1 |
-| `ANTHROPIC_API_KEY` | server (agents) | Set by hand on `ezvisa`. Without it, conversations go to the team. Each agent picks its model in the dashboard |
+| `ANTHROPIC_API_KEY` | server (agents, forms) | Set by hand on `ezvisa`. Without it, conversations go to the team and forms are filled from records only. Each agent picks its model in the dashboard |
+| `FORMS_MODEL` | server (optional) | Unset: Claude Opus 5.5 sets forms up, reads documents and fills fields |
 | `NODE_ENV`, `PORT` | server | `PORT` is injected by Railway |
 
 Locally, the same names live in `.env`, pointing at the docker compose Postgres and S3Mock. S3Mock needs path-style URLs, hence `S3_FORCE_PATH_STYLE=true` locally.
@@ -968,9 +997,9 @@ Buckets cost USD 0.015 per GB-month, with free egress and free API calls. Sixty 
 | M1 | Data, tokens and MCP | Schema migrated and seeded. Tokens created by script. Every tool in section 7.3 works from Claude Code against production, with permission and audit tests green. |
 | M2 | Dashboard, read side | Token sign-in. Overview, cases, case detail, clients, team and templates show live data, styled like the mockup. |
 | M3 | Dashboard, write side, and reminders | Checklist updates, stage moves, uploads, template editing and publishing, the reminder job, the Reminders screen with manual send, theme and token settings. Namtarn runs her real cases on it. |
-| M4 | Next | PDF pre-fill from `fieldMap`, automatic reminder delivery (email, then WhatsApp through Twilio, then the LINE Messaging API), server-side document extraction, client portal, OAuth for hosted MCP connectors. |
+| M4 | Next | Form filling from `fieldMap` with server-side document reading (built, section 6.7), automatic reminder delivery (email, then WhatsApp through Twilio, then the LINE Messaging API), client portal, OAuth for hosted MCP connectors (built, section 5.5). |
 
-Status: M0 to M3 are deployed on Railway. From M4, OAuth for MCP connectors is built (section 5.5).
+Status: M0 to M3 are deployed on Railway. From M4, OAuth for MCP connectors (section 5.5) and form filling (section 6.7) are built.
 
 Decisions for the rest of M4:
 

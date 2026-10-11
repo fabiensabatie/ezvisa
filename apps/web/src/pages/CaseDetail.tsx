@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { useRef, useState } from "react";
+import { CaseForms } from "../components/CaseForms";
 import {
   Button,
   FieldRow,
@@ -15,7 +16,7 @@ import {
 import { DocumentList, FileDrop, useDocumentUpload } from "../components/DocumentList";
 import { Icon } from "../components/Icon";
 import { ShareChecklistDialog } from "../components/ShareChecklistDialog";
-import { TemplateFileList, useTemplateFileLink } from "../components/TemplateFileList";
+import { useTemplateFileLink } from "../components/TemplateFileList";
 import { Avatar, Card, CardTitle, Chip, Label, Progress, QueryView } from "../components/ui";
 import { useCan } from "../lib/can";
 import { daysUntil, formatDate, relativeDays, timeAgo } from "../lib/format";
@@ -766,21 +767,6 @@ function Documents({ c }: { c: CaseDetail }) {
   );
 }
 
-function Forms({ c }: { c: CaseDetail }) {
-  if (c.forms.length === 0) return null;
-  return (
-    <Card>
-      <CardTitle
-        icon={{ name: "file" }}
-        sub={`Blank forms and letters from ${c.template.name} v${c.template.version}, the version this case was opened with.`}
-      >
-        Forms
-      </CardTitle>
-      <TemplateFileList files={c.forms} empty="" caseNumber={c.number} />
-    </Card>
-  );
-}
-
 function Failures({ c }: { c: CaseDetail }) {
   if (c.knownFailures.length === 0) return null;
   return (
@@ -843,7 +829,7 @@ export function CaseDetailPage() {
               <Checklist c={c} />
               <div className="flex flex-col gap-5">
                 <Documents c={c} />
-                <Forms c={c} />
+                <CaseForms c={c} />
                 <Failures c={c} />
                 {c.notes && (
                   <Card>

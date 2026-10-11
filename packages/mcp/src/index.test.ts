@@ -81,7 +81,11 @@ describe.skipIf(!url)("MCP server", () => {
     const assistant = await names("Assistant (MCP)");
     expect(assistant).toContain("update_case_item");
     expect(assistant).toContain("read_document");
+    expect(assistant).toContain("prepare_case_forms");
+    expect(assistant).toContain("update_case_form");
     for (const hidden of [
+      "set_up_template_form",
+      "update_template_form",
       "list_tokens",
       "list_employees",
       "delete_client",

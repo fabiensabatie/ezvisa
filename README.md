@@ -13,18 +13,20 @@ The idea in one line: a **case operating system** where every client has cases, 
 | [docs/03-open-questions.md](docs/03-open-questions.md) | Questions to validate with Namtarn before building |
 | [docs/04-mvp-spec.md](docs/04-mvp-spec.md) | MVP technical spec: monorepo layout, Postgres schema, token auth, MCP tools, dashboard screens, reminders, Railway deployment, milestones |
 | [docs/05-chat-inbox.md](docs/05-chat-inbox.md) | The shared inbox (Chatwoot) and the agents: setup steps for LINE, Messenger and WhatsApp, the Inbox, agents and their scope, handovers, privacy and costs |
+| [docs/06-forms.md](docs/06-forms.md) | Forms EzVisa fills: making every template PDF fillable, filling each case's copy from the record and the client's documents, review and check, costs |
 
 The dashboard mockup is a clickable design canvas: [EzVisa Dashboard Mockup](https://claude.ai/artifact/9wYcfb4LczHrm8zdNjktcV).
 
 ## Status
 
-M0 to M3 are deployed on Railway in Singapore, and M4 adds OAuth for MCP connectors. The MCP server exposes 63 tools over clients, cases, documents, templates, reminders, the shared inbox and the team, each token seeing only what its role allows. The dashboard signs in with the same tokens and runs the work end to end:
+M0 to M3 are deployed on Railway in Singapore, and M4 adds OAuth for MCP connectors. The MCP server exposes 72 tools over clients, cases, documents, forms, templates, reminders, the shared inbox and the team, each token seeing only what its role allows. The dashboard signs in with the same tokens and runs the work end to end:
 - adding clients and opening cases
 - updating the checklist and moving stages, with the guards explained
 - uploading documents and template forms straight to storage
 - sharing the checklist with a client, who uploads the requested documents from a private link without an account, then, after confirming their date of birth, sees, replaces or removes what they sent until the team has checked it
 - a shared inbox for LINE, Messenger and WhatsApp (self-hosted Chatwoot), worked from the dashboard's Inbox next to each client's cases
 - agents, configured in the dashboard, that answer in that inbox through EzVisa's MCP tools. Client agents register new clients, open the case their need calls for (or share the open one) and send its checklist, on the identified client's records only. Team agents work with the linked colleague's permissions ([docs/05-chat-inbox.md](docs/05-chat-inbox.md))
+- every PDF form and letter of a template made fillable (Claude adds fields to scans), filled for each case from the client's record and documents once they are in, then reviewed, corrected and checked by a person ([docs/06-forms.md](docs/06-forms.md))
 - sending reminders
 - editing and publishing templates
 - managing the team, access tokens and the agency colour

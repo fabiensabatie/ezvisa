@@ -5,6 +5,7 @@ import {
   clients,
   dashboard,
   documents,
+  forms,
   notifications,
   reminders,
   settings,
@@ -63,6 +64,34 @@ export const appRouter = router({
     revokeUploadLink: protectedProcedure
       .input(uploadLinks.revokeUploadLinkInput)
       .mutation(({ ctx, input }) => uploadLinks.revokeUploadLink(ctx.domain, input)),
+  }),
+
+  /** Template forms EzVisa fills, and each case's filled copies, checked by a person. */
+  forms: router({
+    template: protectedProcedure
+      .input(forms.templateFormInput)
+      .query(({ ctx, input }) => forms.getTemplateForm(ctx.domain, input)),
+    setUp: protectedProcedure
+      .input(forms.analyzeTemplateFormInput)
+      .mutation(({ ctx, input }) => forms.requestTemplateForm(ctx.domain, input)),
+    updateTemplate: protectedProcedure
+      .input(forms.updateTemplateFormInput)
+      .mutation(({ ctx, input }) => forms.updateTemplateForm(ctx.domain, input)),
+    list: protectedProcedure
+      .input(forms.caseFormsInput)
+      .query(({ ctx, input }) => forms.listCaseForms(ctx.domain, input)),
+    prepare: protectedProcedure
+      .input(forms.caseFormsInput)
+      .mutation(({ ctx, input }) => forms.requestCaseForms(ctx.domain, input)),
+    get: protectedProcedure
+      .input(forms.caseFormInput)
+      .query(({ ctx, input }) => forms.getCaseForm(ctx.domain, input)),
+    update: protectedProcedure
+      .input(forms.updateCaseFormInput)
+      .mutation(({ ctx, input }) => forms.updateCaseForm(ctx.domain, input)),
+    check: protectedProcedure
+      .input(forms.caseFormInput)
+      .mutation(({ ctx, input }) => forms.checkCaseForm(ctx.domain, input)),
   }),
 
   /**

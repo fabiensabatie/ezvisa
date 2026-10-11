@@ -3,6 +3,8 @@ import {
   type ChatConnection,
   type Context,
   type ErrorCode,
+  type FormAi,
+  type FormJobs,
   isDomainError,
   type PushSender,
   type Storage,
@@ -26,6 +28,10 @@ export type TrpcContext = {
   appUrl: string | null;
   /** The shared inbox (Chatwoot), when connected. */
   chat: ChatConnection | null;
+  /** Claude for forms, when ANTHROPIC_API_KEY is set. */
+  forms?: FormAi | null;
+  /** Fills forms in the background. */
+  formJobs?: FormJobs | null;
 };
 
 const t = initTRPC.context<TrpcContext>().create();
@@ -69,6 +75,8 @@ export const protectedProcedure = publicProcedure.use(({ ctx, next }) => {
     now: ctx.now,
     appUrl: ctx.appUrl,
     chat: ctx.chat,
+    forms: ctx.forms ?? null,
+    formJobs: ctx.formJobs ?? null,
   };
   return next({ ctx: { domain } });
 });
@@ -86,5 +94,9 @@ export const clientProcedure = publicProcedure.use(({ ctx, next }) => {
       message: "Too many requests. Wait a minute and try again.",
     });
   }
-  return next({ ctx: { client: { db: ctx.db, storage: ctx.storage, now: ctx.now } } });
+  return next({
+    ctx: {
+      client: { db: ctx.db, storage: ctx.storage, now: ctx.now, formJobs: ctx.formJobs ?? null },
+    },
+  });
 });

@@ -114,7 +114,8 @@ export class S3Storage implements Storage {
           CORSRules: [
             {
               AllowedOrigins: origins,
-              AllowedMethods: ["PUT"],
+              // PUT for uploads; GET so the dashboard can draw PDFs to place form fields.
+              AllowedMethods: ["PUT", "GET", "HEAD"],
               AllowedHeaders: ["content-type"],
               MaxAgeSeconds: 3000,
             },

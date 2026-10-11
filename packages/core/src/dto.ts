@@ -105,12 +105,16 @@ export function templateItemDto(i: TemplateItem) {
 }
 
 export function templateFileDto(f: TemplateFile) {
+  const fields = (f.fieldMap as { fields?: unknown[] } | null)?.fields;
   return {
     id: f.id,
     name: f.name,
     kind: f.kind,
     mimeType: f.mimeType,
     sizeBytes: f.sizeBytes,
+    /** Set up for filling: its fields are known, labelled and mapped */
+    fillable: Array.isArray(fields),
+    fieldCount: Array.isArray(fields) ? fields.length : 0,
   };
 }
 

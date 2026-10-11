@@ -15,6 +15,7 @@ import {
   TextField,
 } from "../components/controls";
 import { FileDrop } from "../components/DocumentList";
+import { FormFieldsDialog } from "../components/FormFieldsDialog";
 import { Icon } from "../components/Icon";
 import { TemplateFileList } from "../components/TemplateFileList";
 import { Card, CardTitle, Chip, Empty, PageHeader, QueryView } from "../components/ui";
@@ -585,13 +586,17 @@ function Files({ t, editing }: { t: Template; editing: boolean }) {
   const trpc = useTRPC();
   const remove = useMutation(trpc.templates.removeFile.mutationOptions());
   const [picked, setPicked] = useState<File | null>(null);
+  const [fields, setFields] = useState<{ id: string; name: string } | null>(null);
 
   return (
     <Card>
-      <CardTitle>Forms and files</CardTitle>
+      <CardTitle sub="EzVisa fills PDF forms and letters for each case; Fields shows where each value comes from.">
+        Forms and files
+      </CardTitle>
       <TemplateFileList
         files={t.selected.files}
         empty="No forms attached."
+        onFields={(f) => setFields(f)}
         onRemove={
           editing && !remove.isPending
             ? (f) => remove.mutate({ template: t.slug, fileId: f.id })
@@ -615,6 +620,9 @@ function Files({ t, editing }: { t: Template; editing: boolean }) {
         </div>
       )}
       {picked && <AttachDialog t={t} file={picked} onClose={() => setPicked(null)} />}
+      {fields && (
+        <FormFieldsDialog fileId={fields.id} name={fields.name} onClose={() => setFields(null)} />
+      )}
     </Card>
   );
 }

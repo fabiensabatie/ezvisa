@@ -2,9 +2,10 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type Anthropic from "@anthropic-ai/sdk";
 import type { Db } from "@ezvisa/db";
 import { audit } from "../audit.js";
-import type { Actor, Context } from "../context.js";
+import type { Actor, Context, FormJobs } from "../context.js";
 import { bangkokToday, formatShortDate } from "../dates.js";
 import { isDomainError } from "../errors.js";
+import type { FormAi } from "../forms/ai.js";
 import { hasLevel, intersectPermissions, parsePermissions } from "../permissions.js";
 import type { PushSender } from "../services/notifications.js";
 import { readPublicSettings } from "../services/settings.js";
@@ -51,6 +52,9 @@ export type ChatAgentsDeps = {
   storage: Storage | null;
   push?: PushSender | null;
   appUrl: string | null;
+  /** Claude for forms and the background runner, for agents that prepare forms. */
+  forms?: FormAi | null;
+  formJobs?: FormJobs | null;
   now?: () => Date;
   /** How long to wait for a client's follow-up messages before answering them together. */
   debounceMs?: number;
@@ -465,6 +469,8 @@ export class ChatAgents {
       push: this.deps.push ?? null,
       appUrl: this.deps.appUrl,
       chat,
+      forms: this.deps.forms ?? null,
+      formJobs: this.deps.formJobs ?? null,
     });
 
     // A team agent works with at most the permissions of the employee writing to it.

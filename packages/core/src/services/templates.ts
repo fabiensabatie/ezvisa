@@ -210,6 +210,7 @@ async function ensureDraft(tx: Tx, ctx: Context, template: LoadedTemplate) {
         mimeType: file.mimeType,
         sizeBytes: file.sizeBytes,
         fieldMap: (file.fieldMap ?? undefined) as Prisma.InputJsonValue | undefined,
+        fillableKey: file.fillableKey,
       },
     });
     fileIds.set(file.id, copy.id);
@@ -529,7 +530,7 @@ export async function attachTemplateFile(
 }
 
 /** Adds a stored object to the draft as a file, optionally as the form for an item. */
-function recordTemplateFile(
+async function recordTemplateFile(
   ctx: Context,
   templateId: string,
   file: {
@@ -541,7 +542,8 @@ function recordTemplateFile(
     itemId?: string | undefined;
   },
 ) {
-  return ctx.db.$transaction(async (tx) => {
+  let createdId: string | null = null;
+  const result = await ctx.db.$transaction(async (tx) => {
     const fresh = await loadTemplate(tx, templateId);
     const { draft, itemIds } = await ensureDraft(tx, ctx, fresh);
     const created = await tx.templateFile.create({
@@ -569,8 +571,14 @@ function recordTemplateFile(
         sizeBytes: created.sizeBytes,
       },
     });
+    createdId = created.id;
     return draftResult(tx, templateId);
   });
+  // Forms and letters EzVisa can fill are set up for filling straight away.
+  if (createdId && file.mimeType === "application/pdf" && file.kind !== "REFERENCE") {
+    ctx.formJobs?.setUpTemplateFile(createdId);
+  }
+  return result;
 }
 
 /** A presigned PUT link for a form or letter. Confirm with confirmTemplateFileUpload. */
@@ -645,7 +653,7 @@ const FILE_LINK_SECONDS = 5 * 60;
  * only reaches files of the template version that case was opened with.
  */
 /** Finds a template file the actor may read, directly or through a case. */
-async function readableTemplateFile(
+export async function readableTemplateFile(
   ctx: Context,
   input: { fileId: string; case?: string | undefined },
 ) {

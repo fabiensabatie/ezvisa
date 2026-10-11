@@ -70,6 +70,13 @@ enum FileKind {
   REFERENCE
 }
 
+enum CaseFormStatus {
+  /// Filled by an agent or the team, not checked yet
+  DRAFT
+  /// A person checked every value
+  CHECKED
+}
+
 enum VersionStatus {
   DRAFT
   PUBLISHED
@@ -306,18 +313,21 @@ model TemplateItem {
 }
 
 model TemplateFile {
-  id         String          @id @default(uuid(7)) @db.Uuid
-  versionId  String          @db.Uuid
-  version    TemplateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
-  name       String
-  kind       FileKind
+  id          String          @id @default(uuid(7)) @db.Uuid
+  versionId   String          @db.Uuid
+  version     TemplateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  name        String
+  kind        FileKind
   /// Shared between versions: a new draft copies the rows, not the objects
-  storageKey String
-  mimeType   String
-  sizeBytes  Int
-  /// Reserved for PDF pre-fill (roadmap)
-  fieldMap   Json?
-  items      TemplateItem[]
+  storageKey  String
+  mimeType    String
+  sizeBytes   Int
+  /// How EzVisa fills it: the form's fields, labels and where each value comes from
+  fieldMap    Json?
+  /// For a flat PDF EzVisa made fillable: its copy with the added fields
+  fillableKey String?
+  items       TemplateItem[]
+  caseForms   CaseForm[]
 
   @@index([versionId])
   @@index([storageKey])
@@ -340,6 +350,7 @@ model Case {
   items             CaseItem[]
   documents         Document[]
   shareLinks        CaseShareLink[]
+  forms             CaseForm[]
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   closedAt          DateTime?
@@ -516,4 +527,26 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([at])
+}
+
+/// A template form filled for one case. The values are the record; the PDF is made from them.
+model CaseForm {
+  id             String         @id @default(uuid(7)) @db.Uuid
+  caseId         String         @db.Uuid
+  case           Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  templateFileId String         @db.Uuid
+  templateFile   TemplateFile   @relation(fields: [templateFileId], references: [id])
+  /// { [field name]: { value, by: "source" | "agent" | "person", from? } }
+  values         Json           @default("{}")
+  status         CaseFormStatus @default(DRAFT)
+  /// The latest filled PDF; every save makes a new one
+  pdfKey         String?
+  preparedAt     DateTime?
+  checkedById    String?        @db.Uuid
+  checkedAt      DateTime?
+  updatedById    String?        @db.Uuid
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  @@unique([caseId, templateFileId])
 }

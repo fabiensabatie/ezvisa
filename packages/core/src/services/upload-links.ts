@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import type { Db } from "@ezvisa/db";
 import { z } from "zod";
 import { audit, auditClient } from "../audit.js";
-import { type Context, requireLevel } from "../context.js";
+import { type Context, type FormJobs, requireLevel } from "../context.js";
 import { bangkokToday, formatDateOnly, formatShortDate } from "../dates.js";
 import { documentDto } from "../dto.js";
 import { DomainError } from "../errors.js";
@@ -129,7 +129,13 @@ export async function revokeUploadLink(ctx: Context, raw: z.input<typeof revokeU
 // ---- client: the upload page ----------------------------------------------------------------
 
 /** What the client side needs: no actor, only the link's secret. */
-export type ClientContext = { db: Db; storage: Storage | null; now: () => Date };
+export type ClientContext = {
+  db: Db;
+  storage: Storage | null;
+  now: () => Date;
+  /** Fills the case's forms once the client has sent everything asked. */
+  formJobs?: FormJobs | null;
+};
 
 export const linkInput = z.object({ secret: z.string().min(20).max(100) });
 export const clientUploadInput = linkInput.extend({
@@ -335,7 +341,15 @@ export async function confirmClientUpload(
       after: { ...documentDto(document), through: "upload link", linkId: link.id },
     });
   });
-  return pageFor(c, await openLink(c, input.secret));
+  const after = await openLink(c, input.secret);
+  if (allSent(after)) c.formJobs?.prepareCase(after.caseId);
+  return pageFor(c, after);
+}
+
+/** Every required item the client was asked for is in: forms can be filled. */
+function allSent(link: OpenLink): boolean {
+  const asked = link.case.items.filter((i) => i.clientUpload && i.required);
+  return asked.length > 0 && asked.every((i) => i.status !== "MISSING" && i.status !== "FLAGGED");
 }
 
 // ---- client: their uploaded files, behind their date of birth ---------------------------------

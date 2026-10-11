@@ -4,6 +4,8 @@ import { join } from "node:path";
 import {
   type ChatAgents,
   type ChatConnection,
+  type FormAi,
+  type FormJobs,
   LOCAL_STORAGE_PATH,
   LocalDiskStorage,
   type PushSender,
@@ -43,6 +45,10 @@ export type AppOptions = {
   chat?: ChatConnection | null;
   /** The agents answering in the shared inbox. Chatwoot calls /chat/webhook/:agentId. */
   agents?: ChatAgents | null;
+  /** Claude for forms. Null fills forms from records only, and flat PDFs stay unfillable. */
+  forms?: FormAi | null;
+  /** Fills forms in the background once the client's documents are in. */
+  formJobs?: FormJobs | null;
 };
 
 const API_PREFIXES = [
@@ -71,6 +77,8 @@ export function createApp({
   publicUrl,
   chat = null,
   agents = null,
+  forms = null,
+  formJobs = null,
 }: AppOptions): Express {
   const origin = publicUrl?.replace(/\/+$/, "");
   const app = express();
@@ -125,6 +133,8 @@ export function createApp({
       resourceMetadataUrl: origin ? resourceMetadataUrl(origin) : undefined,
       ...(origin ? { appUrl: origin } : {}),
       chat,
+      forms,
+      formJobs,
     }),
   );
   if (storage instanceof LocalDiskStorage) app.use(devStorageRouter(storage, uploadOrigins));
@@ -145,6 +155,8 @@ export function createApp({
           ip: req.ip ?? "",
           appUrl: origin ?? null,
           chat,
+          forms,
+          formJobs,
         };
       },
     }),

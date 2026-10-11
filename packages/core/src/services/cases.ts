@@ -272,11 +272,13 @@ export async function updateCase(ctx: Context, raw: z.input<typeof updateCaseInp
 export async function moveCaseStage(ctx: Context, raw: z.input<typeof moveCaseStageInput>) {
   requireLevel(ctx, "cases", "edit");
   const input = moveCaseStageInput.parse(raw);
-  return ctx.db.$transaction(async (tx) => {
+  let moved: string | null = null;
+  const result = await ctx.db.$transaction(async (tx) => {
     const row = await loadCase(tx, input.case);
     assertOpen(row);
     if (row.stage === input.stage) return caseDetailDto(row);
     checkStageGuards(ctx, input.stage, row.items, row.number);
+    moved = row.id;
     await tx.case.update({ where: { id: row.id }, data: { stage: input.stage } });
     await audit(tx, ctx, {
       action: "case.stage_changed",
@@ -287,6 +289,9 @@ export async function moveCaseStage(ctx: Context, raw: z.input<typeof moveCaseSt
     });
     return caseDetailDto(await loadCase(tx, row.id));
   });
+  // Drafting starts with the forms filled from what the client sent.
+  if (moved && input.stage === "DRAFTING") ctx.formJobs?.prepareCase(moved);
+  return result;
 }
 
 export async function updateCaseItem(ctx: Context, raw: z.input<typeof updateCaseItemInput>) {

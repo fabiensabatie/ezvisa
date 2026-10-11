@@ -48,6 +48,7 @@ export {
 export {
   type Actor,
   type Context,
+  type FormJobs,
   requireHuman,
   requireLevel,
   requireStorage,
@@ -58,6 +59,9 @@ export * from "./dates.js";
 export * from "./dto.js";
 export { loadRootEnv } from "./env.js";
 export { DomainError, type ErrorCode, isDomainError } from "./errors.js";
+export { ClaudeFormAi, type FormAi, formAiFromEnv } from "./forms/ai.js";
+export { FormPreparer } from "./forms/preparer.js";
+export { FORMATS, SOURCES } from "./forms/sources.js";
 export { runDailyJob } from "./jobs.js";
 export { LOCAL_STORAGE_PATH, LocalDiskStorage } from "./local-storage.js";
 export { type Page, pageArgs, pageInput, toPage } from "./pagination.js";
@@ -89,6 +93,7 @@ export {
   MAX_TEMPLATE_FILE_BYTES,
   MAX_UPLOAD_BYTES,
 } from "./services/files.js";
+export * as forms from "./services/forms.js";
 export * as notifications from "./services/notifications.js";
 export {
   type PushMessage,

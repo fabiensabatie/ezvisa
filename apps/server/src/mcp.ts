@@ -3,6 +3,8 @@ import {
   bearerToken,
   type ChatConnection,
   type Context,
+  type FormAi,
+  type FormJobs,
   hashToken,
   type Storage,
 } from "@ezvisa/core";
@@ -25,6 +27,9 @@ export type McpRouteOptions = {
   appUrl?: string;
   /** The shared inbox, for the conversation tools. */
   chat?: ChatConnection | null;
+  /** Claude for forms, and the background runner that fills them. */
+  forms?: FormAi | null;
+  formJobs?: FormJobs | null;
 };
 
 function jsonRpcError(res: Response, status: number, code: number, message: string) {
@@ -61,6 +66,8 @@ export function mcpRouter(options: McpRouteOptions): Router {
         now,
         appUrl: options.appUrl ?? null,
         chat: options.chat ?? null,
+        forms: options.forms ?? null,
+        formJobs: options.formJobs ?? null,
       };
     } catch {
       const challenge = ['Bearer realm="ezvisa"'];

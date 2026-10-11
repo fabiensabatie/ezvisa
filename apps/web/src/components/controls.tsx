@@ -93,6 +93,7 @@ export function Dialog({
   description,
   children,
   wide = false,
+  full = false,
 }: {
   open: boolean;
   onClose: () => void;
@@ -100,6 +101,8 @@ export function Dialog({
   description?: ReactNode;
   children: ReactNode;
   wide?: boolean;
+  /** Nearly the whole screen, for side-by-side editors. */
+  full?: boolean;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const titleId = useId();
@@ -116,7 +119,7 @@ export function Dialog({
       ref={ref}
       aria-labelledby={titleId}
       onClose={onClose}
-      className={`m-auto max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] overflow-y-auto rounded-3xl border border-line bg-white p-0 text-text shadow-card backdrop:bg-[#2a1a24]/35 ${wide ? "max-w-2xl" : "max-w-lg"}`}
+      className={`m-auto max-h-[calc(100dvh-32px)] w-[calc(100%-32px)] overflow-y-auto rounded-3xl border border-line bg-white p-0 text-text shadow-card backdrop:bg-[#2a1a24]/35 ${full ? "max-w-7xl" : wide ? "max-w-2xl" : "max-w-lg"}`}
     >
       {open && (
         <div className="p-5 sm:p-6">
