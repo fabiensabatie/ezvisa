@@ -748,63 +748,30 @@ GitHub Actions runs on every pull request: install, typecheck, Biome, tests agai
 
 ## 12. Deployment on Railway
 
-Everything runs in one Railway project in the Singapore region. The project is described in `.railway/railway.ts`, Railway's Infrastructure as Code file. Railway's older per-service `railway.json` and `railway.toml` files are deprecated: new services cannot use them, and Railway stops reading existing ones on 1 December 2026. This project never uses them.
+Everything runs in the Singapore region, in the Railway project `considerate-vitality` (workspace FSOFTWARE), which also hosts services from other repositories. EzVisa's part is described in `.railway/railway.ts`, Railway's Infrastructure as Code file, as a named partial so that applying it never touches the other services. Railway's older per-service `railway.json` and `railway.toml` files are deprecated: new services cannot use them, and Railway stops reading existing ones on 1 December 2026. This project never uses them.
 
 ### 12.1 Resources
 
 | Resource | Type | Region | Role |
 |---|---|---|---|
-| `server` | Service built from the GitHub repository | `asia-southeast1-eqsg3a` (Singapore) | Serves `/auth`, `/trpc`, `/mcp`, `/health` and the web build. One replica in the MVP. |
+| `ezvisa` | Service built from the GitHub repository | `asia-southeast1-eqsg3a` (Singapore) | Serves `/auth`, `/trpc`, `/mcp`, `/health` and the web build. One replica in the MVP. |
 | `jobs` | Cron service built from the same repository | Singapore | Runs the daily reminder job at 08:00 Bangkok time, then exits |
-| `postgres` | Railway Postgres | Singapore | Private network only; point-in-time recovery on |
+| `Postgres` | Railway Postgres | Singapore | Private network only; point-in-time recovery on |
 | `documents` | Railway Bucket | `sin` (Singapore) | Client documents and template files |
-| `documents-backup` | Railway Bucket | `sin` (Singapore) | Nightly copy of new objects and weekly database dumps |
+| `documents-backup` (planned) | Railway Bucket | `sin` (Singapore) | Nightly copy of new objects and weekly database dumps. Created together with the backup job. |
 
 **Why one service.** The dashboard and the API share one origin, so the session cookie needs no cross-origin setup. It is also the smallest bill. The web build can move to its own static service later without code changes.
 
-### 12.2 `.railway/railway.ts` (draft)
+### 12.2 `.railway/railway.ts`
 
-```ts
-import { bucket, defineRailway, github, postgres, project, service } from "railway/iac";
+The file mirrors the live setup and is the place to change it. In short:
 
-export default defineRailway((ctx) => {
-  const prod = ctx.environment === "production";
+- `export const partial = "ezvisa"`: the file owns only the resources it declares. In a project shared with other repositories, a file without a partial would delete everything it does not list.
+- `ezvisa` and `jobs` build from `fabiensabatie/ezvisa` on `main`, in Singapore. `ezvisa` runs migrations before each deploy and is gated by `/health`. `jobs` has `cronSchedule: "0 1 * * *"` and never restarts.
+- Variables are references, never values: `DATABASE_URL` is `db.env.DATABASE_URL`, the `S3_*` variables are `${{documents.ENDPOINT}}` and so on, and `APP_URL` is `https://${{RAILWAY_PUBLIC_DOMAIN}}` until a custom domain is chosen.
+- The project name is the live one, so an apply never renames the shared project.
 
-  const db = postgres("postgres");
-  const documents = bucket("documents", { region: "sin" });
-  const backup = bucket("documents-backup", { region: "sin" });
-
-  const server = service("server", {
-    source: github("<owner>/ezvisa-mono", { branch: "main" }),
-    build: "pnpm turbo run build --filter=@ezvisa/server... --filter=@ezvisa/web...",
-    preDeploy: "pnpm --filter @ezvisa/db migrate:deploy",
-    start: "pnpm --filter @ezvisa/server start",
-    healthcheck: "/health",
-    healthcheckTimeout: 30,
-    replicas: { "asia-southeast1-eqsg3a": 1 },
-    domains: prod ? ["app.<your-domain>"] : [],
-    env: {
-      NODE_ENV: "production",
-      APP_URL: prod ? "https://app.<your-domain>" : "https://${{RAILWAY_PUBLIC_DOMAIN}}",
-      DATABASE_URL: db.env.DATABASE_URL,
-      S3_ENDPOINT: "${{documents.ENDPOINT}}",
-      S3_REGION: "${{documents.REGION}}",
-      S3_BUCKET: "${{documents.BUCKET}}",
-      S3_ACCESS_KEY_ID: "${{documents.ACCESS_KEY_ID}}",
-      S3_SECRET_ACCESS_KEY: "${{documents.SECRET_ACCESS_KEY}}",
-      BACKUP_S3_ENDPOINT: "${{documents-backup.ENDPOINT}}",
-      BACKUP_S3_REGION: "${{documents-backup.REGION}}",
-      BACKUP_S3_BUCKET: "${{documents-backup.BUCKET}}",
-      BACKUP_S3_ACCESS_KEY_ID: "${{documents-backup.ACCESS_KEY_ID}}",
-      BACKUP_S3_SECRET_ACCESS_KEY: "${{documents-backup.SECRET_ACCESS_KEY}}",
-    },
-  });
-
-  return project("ezvisa", { resources: [db, documents, backup, server] });
-});
-```
-
-Two points to confirm with `railway config plan` in M0. First, the bucket variables are written with Railway's `${{resource.VARIABLE}}` reference syntax. Second, the Postgres region is set when the database is first provisioned, since the `postgres()` helper takes no region.
+The live setup was first built in the dashboard and through Railway's MCP tools. The file was then written to match it, so the first `railway config plan` should mainly claim ownership and remove a few unused hand-set variables (listed in `.railway/README.md`).
 
 ### 12.3 Build and runtime
 
