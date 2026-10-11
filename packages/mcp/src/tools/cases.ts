@@ -1,4 +1,4 @@
-import { cases, type Permissions } from "@ezvisa/core";
+import { cases, type Permissions, uploadLinks } from "@ezvisa/core";
 import { canEdit, canView, defineTool } from "../tool.js";
 
 export const caseTools = [
@@ -16,7 +16,7 @@ export const caseTools = [
     name: "get_case",
     title: "Get a case",
     description:
-      "A case in full: stage, every checklist item with its status, note, documents and the form behind it (formFileId), the forms of its template version, the template's known failures, and stored documents. Open a form with get_template_file or read_template_file, passing this case.",
+      "A case in full: stage, every checklist item with its status, note, documents, whether the client uploads it (clientUpload) and the form behind it (formFileId), the forms of its template version, the template's known failures, stored documents, and the client upload link in force (uploadLink: expiry and upload count). Open a form with get_template_file or read_template_file, passing this case.",
     input: cases.getCaseInput,
     annotations: { readOnlyHint: true },
     visibleTo: canView("cases"),
@@ -67,5 +67,24 @@ export const caseTools = [
     annotations: { destructiveHint: true },
     visibleTo: (p: Permissions) => canEdit("cases")(p) || p.markSubmitted,
     run: (ctx, input) => cases.closeCase(ctx, input),
+  }),
+  defineTool({
+    name: "create_client_upload_link",
+    title: "Share the checklist with the client",
+    description:
+      "Creates the private link a client opens, without an account, to upload the documents the case still needs: the checklist items set for client upload on the template. Returns the link and a message to send on the client's channel. Sharing again replaces the previous link. The client accepts the privacy notice on that page before uploading; uploads arrive as RECEIVED for a person to verify.",
+    input: uploadLinks.createUploadLinkInput,
+    visibleTo: canEdit("cases"),
+    run: (ctx, input) => uploadLinks.createUploadLink(ctx, input),
+  }),
+  defineTool({
+    name: "revoke_client_upload_link",
+    title: "Stop the client upload link",
+    description:
+      "Stops the case's client upload link from working, e.g. if it was sent to the wrong person.",
+    input: uploadLinks.revokeUploadLinkInput,
+    annotations: { destructiveHint: true },
+    visibleTo: canEdit("cases"),
+    run: (ctx, input) => uploadLinks.revokeUploadLink(ctx, input),
   }),
 ];

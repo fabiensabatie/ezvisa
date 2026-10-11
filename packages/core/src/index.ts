@@ -58,6 +58,7 @@ export * as reminders from "./services/reminders.js";
 export * as settings from "./services/settings.js";
 export * as team from "./services/team.js";
 export * as templates from "./services/templates.js";
+export * as uploadLinks from "./services/upload-links.js";
 export {
   authenticateSession,
   createSession,

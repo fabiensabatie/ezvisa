@@ -17,6 +17,21 @@ export function toJson(value: unknown): Prisma.InputJsonValue | undefined {
   ) as Prisma.InputJsonValue;
 }
 
+/** Records something a client did through a shared link: no employee acted. */
+export async function auditClient(tx: Tx, entry: AuditEntry): Promise<void> {
+  await tx.auditLog.create({
+    data: {
+      actorId: null,
+      via: "CLIENT",
+      action: entry.action,
+      entity: entry.entity,
+      entityId: entry.entityId,
+      before: toJson(entry.before),
+      after: toJson(entry.after),
+    },
+  });
+}
+
 /** Records one audit row. Call it inside the same transaction as the change. */
 export async function audit(tx: Tx, ctx: Context, entry: AuditEntry): Promise<void> {
   await tx.auditLog.create({

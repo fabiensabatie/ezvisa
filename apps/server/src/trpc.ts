@@ -9,6 +9,7 @@ import {
 import type { Db } from "@ezvisa/db";
 import { initTRPC, TRPCError } from "@trpc/server";
 import { ZodError } from "zod";
+import { createRateLimiter } from "./rate-limit.js";
 
 /** Request context for the dashboard API. `actor` is null when not signed in. */
 export type TrpcContext = {
@@ -18,6 +19,10 @@ export type TrpcContext = {
   push: PushSender | null;
   now: () => Date;
   actor: Actor | null;
+  /** The caller's address, for rate limits on the public client pages. */
+  ip: string;
+  /** The dashboard's public address, for links sent to clients. */
+  appUrl: string | null;
 };
 
 const t = initTRPC.context<TrpcContext>().create();
@@ -59,6 +64,23 @@ export const protectedProcedure = publicProcedure.use(({ ctx, next }) => {
     storage: ctx.storage,
     push: ctx.push,
     now: ctx.now,
+    appUrl: ctx.appUrl,
   };
   return next({ ctx: { domain } });
+});
+
+const allowClient = createRateLimiter(60, 60_000);
+
+/**
+ * For the pages clients open from a shared link: no session, rate-limited per address.
+ * The link's secret, checked by each service, is the only credential.
+ */
+export const clientProcedure = publicProcedure.use(({ ctx, next }) => {
+  if (!allowClient(`ip:${ctx.ip}`)) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: "Too many requests. Wait a minute and try again.",
+    });
+  }
+  return next({ ctx: { client: { db: ctx.db, storage: ctx.storage, now: ctx.now } } });
 });

@@ -168,6 +168,7 @@ enum Via {
   DASHBOARD
   MCP
   SYSTEM
+  CLIENT // the client, through a shared upload link
 }
 
 model Role {
@@ -285,6 +286,7 @@ model TemplateItem {
   description String?
   kind        ItemKind        @default(DOCUMENT)
   required    Boolean         @default(true)
+  clientUpload Boolean        @default(false) // listed on the client's upload page; new DOCUMENT items default to true
   rules       Json?           // e.g. { "maxAgeDays": 7 } for a bank letter
   formFileId  String?         @db.Uuid
   formFile    TemplateFile?   @relation(fields: [formFileId], references: [id])
@@ -318,6 +320,7 @@ model Case {
   notes             String?
   items             CaseItem[]
   documents         Document[]
+  shareLinks        CaseShareLink[]
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   closedAt          DateTime?
@@ -336,12 +339,29 @@ model CaseItem {
   label          String
   kind           ItemKind
   required       Boolean
+  clientUpload   Boolean       @default(false) // copied from the template item
   status         ItemStatus    @default(MISSING)
   note           String?       // the reason, mandatory when FLAGGED or WAIVED
   flaggedByKind  EmployeeKind?
   updatedById    String?       @db.Uuid
   documents      Document[]
   updatedAt      DateTime      @updatedAt
+}
+
+// The link a client opens to upload what the checklist asks of them. One in force per case.
+model CaseShareLink {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  caseId      String    @db.Uuid
+  case        Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  hash        String    @unique // SHA-256 of the secret; the secret itself is never stored
+  createdById String    @db.Uuid
+  expiresAt   DateTime
+  revokedAt   DateTime? // set when revoked or replaced by a new link
+  lastUsedAt  DateTime?
+  uploads     Int       @default(0)
+  createdAt   DateTime  @default(now())
+
+  @@index([caseId])
 }
 
 model Document {
@@ -527,7 +547,7 @@ To connect claude.ai: Settings → Connectors → Add custom connector, URL `<AP
 | Path | Purpose |
 |---|---|
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Dashboard session |
-| `/trpc/*` | Dashboard API, session cookie required |
+| `/trpc/*` | Dashboard API, session cookie required. The `upload.*` procedures are the exception: the client upload page calls them with the link's secret instead (section 6.5) |
 | `POST /mcp` | MCP Streamable HTTP endpoint, bearer token required |
 | `GET /.well-known/oauth-protected-resource/mcp`, `GET /.well-known/oauth-authorization-server` | OAuth discovery for MCP connectors (when `APP_URL` is set) |
 | `POST /register`, `GET`/`POST /authorize`, `POST /token`, `POST /revoke` | OAuth for MCP connectors: registration, consent, tokens, revocation |
@@ -540,7 +560,7 @@ Both `/trpc` and `/mcp` build the same `Context`:
 
 ```ts
 type Actor = { employeeId: string; kind: "HUMAN" | "ASSISTANT"; permissions: Permissions; tokenId: string };
-type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM"; db: PrismaClient; storage: Storage; now: () => Date };
+type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM" | "CLIENT"; db: PrismaClient; storage: Storage; now: () => Date };
 ```
 
 `core` services take `(ctx, input)`, validate `input` with Zod, check permissions, run in a transaction, and write the audit log. The tRPC routers and the MCP tools are thin wrappers over these services.
@@ -559,7 +579,20 @@ type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM"; db: PrismaCl
 - Object keys are never reused, so a file is never overwritten. This matters because Railway buckets have no versioning.
 - Size limits: 20 MB per client document, 200 MB per template file (forms and reference scans can be large; the server only checks their size). Allowed types: PDF, JPEG, PNG, HEIC, WebP, DOCX.
 - Over MCP, files on disk never travel as base64. `create_document_upload` and `create_template_file_upload` return a presigned link and a ready-made `curl` command; a client with a shell, such as Claude Code, PUTs the file straight to the bucket, then calls the matching confirm tool. Template links last 60 minutes, so a batch of links can be requested first. Base64 tools (`upload_document`, `attach_template_file`) remain for small files, up to 10 MB.
+- Clients upload through a shared link (section 6.5) with the same presigned PUT flow, from the dashboard's own origin, so the bucket's CORS rule already covers them.
 - Keys follow `clients/<clientId>/<documentId>/<filename>` and `templates/<templateId>/<versionId>/<fileId>/<filename>`.
+
+### 6.5 Client upload links
+
+An employee shares the client's part of a checklist in one click: "Share checklist with client" on the case, or `create_client_upload_link` over MCP. The client opens a private page, without an account, and uploads what is asked.
+
+- Which items appear is set on the template: each checklist item has "The client uploads it" (`clientUpload`). New DOCUMENT items default to it; forms and information items do not. Cases copy the setting when they open.
+- The link is `<APP_URL>/upload#<secret>`: 32 random bytes, base64url. The secret sits in the URL fragment, which browsers never send to a server, and travels in POST bodies, so it stays out of request logs. Only its SHA-256 is stored.
+- It is shown once, with a message ready to paste into the client's chat. Sharing again replaces the previous link. It expires after 1 to 60 days (14 by default), stops when the case closes, and can be revoked at any time.
+- The page shows the agency's name and colour, the client's first name and the requested items with their state: needed, please send a new copy (FLAGGED), received, done. It never shows or serves a stored document.
+- Before the first upload the client accepts the privacy notice on the page, which sets `Client.consentAt` if it was not set.
+- Each file lands as a `Document` on the case, linked to its item. A MISSING or FLAGGED item becomes RECEIVED, for a person to verify. The audit log records the client as the actor (`via: CLIENT`, no employee), and the activity feed reads "The client uploaded …".
+- Limits: 100 uploads per link, 60 requests per minute per IP, and the usual document size and type rules.
 
 ---
 
@@ -590,8 +623,8 @@ type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM"; db: PrismaCl
 | Employees | `list_employees`, `get_employee`, `create_employee`, `update_employee`, `deactivate_employee` | team |
 | Roles | `list_roles`, `get_role`, `create_role`, `update_role`, `delete_role` (only when no employee uses it) | team |
 | Tokens | `list_tokens`, `revoke_token` | team: full |
-| Templates | `list_templates`, `get_template` (version optional), `create_template`, `update_template`, `add_template_item`, `update_template_item`, `remove_template_item`, `reorder_template_items`, `attach_template_file`, `create_template_file_upload`, `confirm_template_file_upload`, `get_template_file` (link and save-to-disk command), `read_template_file` (content, up to 10 MB), `remove_template_file`, `publish_template_version`, `archive_template` | templates; reading a form through a case needs only case access |
-| Cases | `list_cases` (stage, assignee, client, `due_before`), `get_case`, `create_case`, `update_case` (assignee, due date, notes), `move_case_stage`, `close_case` (outcome) | cases, plus the stage guards |
+| Templates | `list_templates`, `get_template` (version optional), `create_template`, `update_template`, `add_template_item` and `update_template_item` (including `clientUpload`), `remove_template_item`, `reorder_template_items`, `attach_template_file`, `create_template_file_upload`, `confirm_template_file_upload`, `get_template_file` (link and save-to-disk command), `read_template_file` (content, up to 10 MB), `remove_template_file`, `publish_template_version`, `archive_template` | templates; reading a form through a case needs only case access |
+| Cases | `list_cases` (stage, assignee, client, `due_before`), `get_case`, `create_case`, `update_case` (assignee, due date, notes), `move_case_stage`, `close_case` (outcome), `create_client_upload_link`, `revoke_client_upload_link` | cases, plus the stage guards |
 | Case items | `update_case_item` (status, note, linked documents) | cases: edit |
 | Documents | `list_documents`, `get_document` (link and save-to-disk command), `read_document` (content, up to 10 MB), `upload_document`, `create_document_upload`, `confirm_document_upload`, `update_document` (fields read from it), `delete_document` | documents |
 | Reminders | `list_deadlines` (`within_days`), `list_reminders` (status), `mark_reminder_sent`, `skip_reminder`, `get_reminder_rules`, `update_reminder_rule` | reminders |
@@ -649,7 +682,8 @@ Default stay message:
 | Consent | `Client.consentAt` must be set before documents can be uploaded for that client |
 | Retention | A nightly job hard-deletes documents 12 months after their case closed, unless the client still has an open case or a future deadline. The period is a setting. |
 | Access requests | `get_client` with `include_all` exports everything held on a client, to answer PDPA access requests |
-| Rate limits | Login 10 per minute per IP; MCP 120 requests per minute per token |
+| Client upload links | Secret in the URL fragment, stored hashed; upload only, never read; expire, revocable, replaced on re-share, dead once the case closes (section 6.5) |
+| Rate limits | Login 10 per minute per IP; MCP 120 requests per minute per token; client upload page 60 per minute per IP |
 | Backups | Postgres point-in-time recovery, plus a nightly copy of new documents to a second bucket (section 12.6) |
 
 ---
@@ -663,6 +697,7 @@ Each screen matches a frame of the mockup.
 | Route | Screen | Main data |
 |---|---|---|
 | `/login` | Sign in with a token | `POST /auth/login` |
+| `/upload#<secret>` | The client's upload page, outside the signed-in app (section 6.5) | `upload.*` |
 | `/` | Overview: counters, pipeline, needs attention, deadlines, activity | `dashboard.overview` |
 | `/cases` | Case board by stage | `cases.list` |
 | `/cases/:number` | Case detail: stage tracker, checklist, documents, forms, actions | `cases.get`, `caseItems.update`, `cases.moveStage` |
@@ -679,10 +714,10 @@ M2 delivered every screen above in read-only form. M3 adds the write side, each 
 | Screen | Actions |
 |---|---|
 | Cases | New case: client, template, assignee, due date |
-| Case detail | The next stage in one click ("Start collecting", "Move to drafting", "Send for validation", "Approve the pack", "Log the outcome"); change stage or cancel with a note; edit assignee, due date and notes; per checklist item a one-tap "Verify" or "Upload", and a menu to set any status with its note and documents; upload documents to the case |
+| Case detail | The next stage in one click ("Start collecting", "Move to drafting", "Send for validation", "Approve the pack", "Log the outcome"); change stage or cancel with a note; edit assignee, due date and notes; per checklist item a one-tap "Verify" or "Upload", and a menu to set any status with its note and documents; upload documents to the case; "Share checklist with client": choose how long the link works, copy the link and message, or stop the current link |
 | Clients, client detail | New client, edit, record or withdraw consent, open a case, upload documents |
 | Reminders | Send now, edit the message, copy, mark sent, skip; open a case from a deadline; edit the schedule |
-| Templates, template detail | New template; edit template (the first change starts a draft); add, edit, reorder and remove items; attach forms; edit known failures; publish with notes or discard the draft; archive |
+| Templates, template detail | New template; edit template (the first change starts a draft); add, edit, reorder and remove items, and tick the ones the client uploads; attach forms; edit known failures; publish with notes or discard the draft; archive |
 | Team | Add an employee, then create their token; edit; deactivate |
 | Settings | Make a colour the agency colour; the name in messages; create and revoke access tokens |
 

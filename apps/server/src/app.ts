@@ -75,6 +75,7 @@ export function createApp({
       now,
       rateLimit: mcpRateLimit,
       resourceMetadataUrl: origin ? resourceMetadataUrl(origin) : undefined,
+      ...(origin ? { appUrl: origin } : {}),
     }),
   );
   if (storage instanceof LocalDiskStorage) app.use(devStorageRouter(storage, uploadOrigins));
@@ -85,7 +86,16 @@ export function createApp({
       router: appRouter,
       async createContext({ req, res }) {
         const actor = await dashboardActor({ db, now, secureCookies }, req, res);
-        return { requestId: randomUUID(), db, storage, push, now, actor };
+        return {
+          requestId: randomUUID(),
+          db,
+          storage,
+          push,
+          now,
+          actor,
+          ip: req.ip ?? "",
+          appUrl: origin ?? null,
+        };
       },
     }),
   );

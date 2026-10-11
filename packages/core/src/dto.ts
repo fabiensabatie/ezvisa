@@ -100,6 +100,7 @@ export function templateItemDto(i: TemplateItem) {
     required: i.required,
     rules: i.rules as Record<string, unknown> | null,
     formFileId: i.formFileId,
+    clientUpload: i.clientUpload,
   };
 }
 
@@ -176,6 +177,7 @@ export function caseItemDto(i: CaseItem & { documents?: Array<{ id: string }> })
     status: i.status,
     note: i.note,
     flaggedBy: i.flaggedByKind,
+    clientUpload: i.clientUpload,
     documentIds: i.documents?.map((d) => d.id) ?? [],
     updatedAt: iso(i.updatedAt),
   };
@@ -227,8 +229,15 @@ export function caseDetailDto(
       files: TemplateFile[];
       items: Array<{ id: string; formFileId: string | null }>;
     };
+    shareLinks: Array<{
+      expiresAt: Date;
+      lastUsedAt: Date | null;
+      uploads: number;
+      createdAt: Date;
+    }>;
   },
 ) {
+  const link = c.shareLinks[0];
   const summary = caseSummaryDto(c);
   // Which form fills each checklist item, from the template version the case was opened with.
   const formOf = new Map(c.templateVersion.items.map((i) => [i.id, i.formFileId]));
@@ -251,6 +260,15 @@ export function caseDetailDto(
       })),
     /** Forms, letters and reference files of the template version this case uses. */
     forms: c.templateVersion.files.map(templateFileDto),
+    /** The link last shared with the client to upload documents; check expiresAt. */
+    uploadLink: link
+      ? {
+          createdAt: iso(link.createdAt),
+          expiresAt: iso(link.expiresAt),
+          lastUsedAt: iso(link.lastUsedAt),
+          uploads: link.uploads,
+        }
+      : null,
     documents: c.documents.filter((d) => !d.deletedAt).map(documentDto),
   };
 }

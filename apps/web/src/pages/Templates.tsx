@@ -273,6 +273,7 @@ function ItemDialog({
   const [description, setDescription] = useState(item?.description ?? "");
   const [kind, setKind] = useState<ItemKind>(item?.kind ?? "DOCUMENT");
   const [required, setRequired] = useState(item?.required ?? true);
+  const [clientUpload, setClientUpload] = useState(item?.clientUpload ?? true);
   const [formFileId, setFormFileId] = useState(item?.formFileId ?? "");
 
   return (
@@ -294,6 +295,7 @@ function ItemDialog({
                 description: nullable(description),
                 kind,
                 required,
+                clientUpload,
                 formFileId: formFileId || null,
               })
               .catch(() => null)
@@ -304,6 +306,7 @@ function ItemDialog({
                 description: optional(description),
                 kind,
                 required,
+                clientUpload,
               })
               .catch(() => null);
         if (saved) onClose();
@@ -346,6 +349,12 @@ function ItemDialog({
         hint="A case moves to validation only once every required item is in."
         checked={required}
         onChange={setRequired}
+      />
+      <CheckboxField
+        label="The client uploads it"
+        hint="Listed on the page the client opens from “Share checklist with client”."
+        checked={clientUpload}
+        onChange={setClientUpload}
       />
     </FormDialog>
   );
@@ -525,6 +534,7 @@ function Checklist({ t, editing }: { t: Template; editing: boolean }) {
             <span className="flex flex-wrap items-center justify-end gap-1.5">
               {item.kind !== "DOCUMENT" && <Chip tone="info">{item.kind.toLowerCase()}</Chip>}
               {!item.required && <Chip>Optional</Chip>}
+              {item.clientUpload && <Chip tone="ok">Client uploads</Chip>}
               {item.formFileId && <Chip tone="accent">Pre-filled form</Chip>}
               {editing && (
                 <>

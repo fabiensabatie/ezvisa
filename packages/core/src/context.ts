@@ -26,6 +26,8 @@ export type Context = {
   now: () => Date;
   /** Sends Web Push notifications. Absent where nothing is sent, such as MCP. */
   push?: PushSender | null;
+  /** The dashboard's public address, e.g. https://app.example.com, for links sent to clients. */
+  appUrl?: string | null;
 };
 
 /** A Prisma client usable inside or outside a transaction. */

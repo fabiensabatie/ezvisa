@@ -14,6 +14,7 @@ import {
 } from "../components/controls";
 import { DocumentList, FileDrop, useDocumentUpload } from "../components/DocumentList";
 import { Icon } from "../components/Icon";
+import { ShareChecklistDialog } from "../components/ShareChecklistDialog";
 import { TemplateFileList, useTemplateFileLink } from "../components/TemplateFileList";
 import { Avatar, Card, CardTitle, Chip, Label, Progress, QueryView } from "../components/ui";
 import { useCan } from "../lib/can";
@@ -124,6 +125,7 @@ function Header({ c }: { c: CaseDetail }) {
   const { can } = useCan();
   const [editing, setEditing] = useState(false);
   const [outcome, setOutcome] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const days = c.dueDate ? daysUntil(c.dueDate) : null;
   const s = stage(c.stage);
   return (
@@ -179,6 +181,11 @@ function Header({ c }: { c: CaseDetail }) {
       </div>
       {isOpen(c) && can("cases", "edit") && (
         <div className="flex w-full flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+          {c.items.some((i) => i.clientUpload) && (
+            <Button variant="soft" icon="send" onClick={() => setSharing(true)}>
+              Share checklist with client
+            </Button>
+          )}
           <Button variant="outline" icon="edit" onClick={() => setEditing(true)}>
             Edit case
           </Button>
@@ -187,6 +194,7 @@ function Header({ c }: { c: CaseDetail }) {
       )}
       {editing && <EditCaseDialog c={c} open onClose={() => setEditing(false)} />}
       {outcome && <OutcomeDialog c={c} open onClose={() => setOutcome(false)} />}
+      {sharing && <ShareChecklistDialog c={c} onClose={() => setSharing(false)} />}
     </Card>
   );
 }
@@ -510,6 +518,11 @@ function ChecklistRow({
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-bold">{item.label}</span>
           {!item.required && <Chip>Optional</Chip>}
+          {item.clientUpload && (
+            <Chip tone="info" className="!px-2 !py-0.5 !text-[11px]">
+              From client
+            </Chip>
+          )}
         </div>
         <div
           className={`mt-0.5 text-sm ${item.status === "FLAGGED" ? "text-[#A32A2A]" : "text-muted"}`}

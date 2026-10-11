@@ -187,4 +187,67 @@ describe.skipIf(!url)("dashboard write side", () => {
     const saved = await mutate(cookie, "settings.update", { accent: "#2db38a" });
     expect(saved.data).toMatchObject({ accent: "#2DB38A" });
   });
+
+  it("shares the checklist, and the client uploads through the link without signing in", async () => {
+    const { cookie, actor } = await signIn("Owner");
+    await publishSampleTemplate(createTestContext(db, actor));
+    const client = await mutate(cookie, "clients.create", {
+      fullName: "Margaret Ellis",
+      nationality: "GB",
+    });
+    const opened = await mutate(cookie, "cases.create", {
+      clientId: client.data?.id,
+      template: "retirement-extension",
+    });
+    const number = opened.data?.number as string;
+
+    const shared = await mutate(cookie, "cases.shareUploadLink", { case: number });
+    expect(shared.status).toBe(200);
+    const secret = String(shared.data?.url).split("#")[1] ?? "";
+    expect(secret.length).toBeGreaterThan(40);
+
+    // The client has no cookie: the secret is the only key.
+    const page = await mutate("", "upload.view", { secret });
+    expect(page.data).toMatchObject({ firstName: "Margaret", consentGiven: false });
+    const item = (page.data?.items as Array<{ id: string }> | undefined)?.[0];
+    const blocked = await mutate("", "upload.createUpload", {
+      secret,
+      itemId: item?.id,
+      filename: "passport.png",
+      mimeType: "image/png",
+      sizeBytes: 4,
+    });
+    expect(blocked.status).toBe(412);
+    expect((await mutate("", "upload.acceptPrivacyNotice", { secret })).status).toBe(200);
+
+    const upload = await mutate("", "upload.createUpload", {
+      secret,
+      itemId: item?.id,
+      filename: "passport.png",
+      mimeType: "image/png",
+      sizeBytes: 4,
+    });
+    const link = new URL(String(upload.data?.uploadUrl));
+    const put = await fetch(`${base}${link.pathname}${link.search}`, {
+      method: "PUT",
+      headers: { "Content-Type": "image/png" },
+      body: new Uint8Array([137, 80, 78, 71]),
+    });
+    expect(put.status).toBe(200);
+    const after = await mutate("", "upload.confirmUpload", {
+      secret,
+      itemId: item?.id,
+      uploadKey: upload.data?.uploadKey,
+      filename: "passport.png",
+      mimeType: "image/png",
+    });
+    expect((after.data?.items as Array<{ state: string }> | undefined)?.[0]?.state).toBe(
+      "received",
+    );
+
+    const wrong = await mutate("", "upload.view", { secret: `${secret.slice(0, -2)}xx` });
+    expect(wrong.status).toBe(404);
+    expect((await mutate(cookie, "cases.revokeUploadLink", { case: number })).status).toBe(200);
+    expect((await mutate("", "upload.view", { secret })).status).not.toBe(200);
+  });
 });

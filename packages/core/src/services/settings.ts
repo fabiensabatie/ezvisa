@@ -36,6 +36,9 @@ export async function getPublicSettings(ctx: Context) {
   return read(ctx.db);
 }
 
+/** The same settings without a signed-in person, for pages clients open. */
+export const readPublicSettings = read;
+
 export async function updateSettings(ctx: Context, raw: z.input<typeof updateSettingsInput>) {
   requireLevel(ctx, "settings", "edit");
   const input = updateSettingsInput.parse(raw);

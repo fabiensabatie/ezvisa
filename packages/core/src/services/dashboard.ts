@@ -52,7 +52,7 @@ async function describeActivity(ctx: Context, entries: AuditLog[]): Promise<Desc
   const after = (e: AuditLog) => (e.after ?? {}) as Record<string, unknown>;
 
   return entries.map((e) => {
-    const actor = name(e.actorId);
+    const actor = e.via === "CLIENT" ? "The client" : name(e.actorId);
     const kase = caseRows.find((c) => c.id === e.entityId);
     const item = items.find((i) => i.id === e.entityId);
     const client = clientRows.find((c) => c.id === e.entityId);
@@ -62,6 +62,15 @@ async function describeActivity(ctx: Context, entries: AuditLog[]): Promise<Desc
     switch (e.action) {
       case "client.created":
         text = `added ${client?.fullName ?? String(after(e).fullName ?? "a client")}`;
+        break;
+      case "client.consent_given":
+        text = `${client?.fullName ? `(${client.fullName}) ` : ""}accepted the privacy notice`;
+        break;
+      case "case.upload_link_created":
+        text = `shared the upload checklist for ${caseLabel}`;
+        break;
+      case "case.upload_link_revoked":
+        text = `revoked the upload link for ${caseLabel}`;
         break;
       case "client.updated":
         text = `updated ${client?.fullName ?? "a client"}`;

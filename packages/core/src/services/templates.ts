@@ -31,7 +31,17 @@ const newItem = z.object({
   kind: itemKind.default("DOCUMENT"),
   required: z.boolean().default(true),
   rules: rules.optional(),
+  clientUpload: z
+    .boolean()
+    .optional()
+    .describe(
+      "Listed on the client's upload page when the checklist is shared. Defaults to true for DOCUMENT items.",
+    ),
 });
+
+/** Documents come from the client unless the template says otherwise. */
+const clientUploadOf = (item: { kind: string; clientUpload?: boolean | undefined }) =>
+  item.clientUpload ?? item.kind === "DOCUMENT";
 
 export const listTemplatesInput = z.object({
   includeArchived: z.boolean().default(false),
@@ -85,6 +95,10 @@ export const updateTemplateItemInput = z.object({
     .nullable()
     .optional()
     .describe("The form this item is filled from"),
+  clientUpload: z
+    .boolean()
+    .optional()
+    .describe("Listed on the client's upload page when the checklist is shared"),
 });
 export const removeTemplateItemInput = z.object({
   template: templateRef,
@@ -213,6 +227,7 @@ async function ensureDraft(tx: Tx, ctx: Context, template: LoadedTemplate) {
         required: item.required,
         rules: (item.rules ?? undefined) as Prisma.InputJsonValue | undefined,
         formFileId: item.formFileId ? (fileIds.get(item.formFileId) ?? null) : null,
+        clientUpload: item.clientUpload,
       },
     });
     itemIds.set(item.id, copy.id);
@@ -323,6 +338,7 @@ export async function createTemplate(ctx: Context, raw: z.input<typeof createTem
                 kind: item.kind,
                 required: item.required,
                 rules: item.rules as Prisma.InputJsonValue | undefined,
+                clientUpload: clientUploadOf(item),
               })),
             },
           },
@@ -374,6 +390,7 @@ export async function addTemplateItem(ctx: Context, raw: z.input<typeof addTempl
         kind: item.kind,
         required: item.required,
         rules: item.rules as Prisma.InputJsonValue | undefined,
+        clientUpload: clientUploadOf(item),
       },
     });
     const order = draft.items.map((i) => i.id);

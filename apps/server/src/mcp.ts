@@ -20,6 +20,8 @@ export type McpRouteOptions = {
   rateLimit?: number;
   /** OAuth protected resource metadata, advertised on 401 so connectors can sign in. */
   resourceMetadataUrl?: string;
+  /** The dashboard's public address, for links tools hand out (client upload links). */
+  appUrl?: string;
 };
 
 function jsonRpcError(res: Response, status: number, code: number, message: string) {
@@ -48,7 +50,14 @@ export function mcpRouter(options: McpRouteOptions): Router {
     let ctx: Context;
     try {
       const actor = await authenticateBearer(options.db, token ?? "", now());
-      ctx = { actor, via: "MCP", db: options.db, storage: options.storage, now };
+      ctx = {
+        actor,
+        via: "MCP",
+        db: options.db,
+        storage: options.storage,
+        now,
+        appUrl: options.appUrl ?? null,
+      };
     } catch {
       const challenge = ['Bearer realm="ezvisa"'];
       if (token) challenge.push('error="invalid_token"');

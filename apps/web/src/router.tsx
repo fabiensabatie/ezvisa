@@ -4,6 +4,7 @@ import { CaseDetailPage } from "./pages/CaseDetail";
 import { CasesPage } from "./pages/Cases";
 import { ClientDetailPage } from "./pages/ClientDetail";
 import { ClientsPage } from "./pages/Clients";
+import { ClientUploadPage } from "./pages/ClientUpload";
 import { LoginPage } from "./pages/Login";
 import { OverviewPage } from "./pages/Overview";
 import { RemindersPage } from "./pages/Reminders";
@@ -33,6 +34,12 @@ const loginRoute = createRoute({
   path: "/login",
   component: LoginPage,
 });
+// Opened by clients from a shared link: no account, outside the signed-in shell.
+const uploadRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/upload",
+  component: ClientUploadPage,
+});
 const shellRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "shell",
@@ -43,6 +50,7 @@ const parent = () => shellRoute;
 
 export const routeTree = rootRoute.addChildren([
   loginRoute,
+  uploadRoute,
   shellRoute.addChildren([
     createRoute({ getParentRoute: parent, path: "/", component: OverviewPage }),
     createRoute({ getParentRoute: parent, path: "/cases", component: CasesPage }),

@@ -17,10 +17,11 @@ The dashboard mockup is a clickable design canvas: [EzVisa Dashboard Mockup](htt
 
 ## Status
 
-M0 to M3 are deployed on Railway in Singapore, and M4 adds OAuth for MCP connectors. The MCP server exposes 55 tools over clients, cases, documents, templates, reminders and the team, each token seeing only what its role allows. The dashboard signs in with the same tokens and runs the work end to end:
+M0 to M3 are deployed on Railway in Singapore, and M4 adds OAuth for MCP connectors. The MCP server exposes 57 tools over clients, cases, documents, templates, reminders and the team, each token seeing only what its role allows. The dashboard signs in with the same tokens and runs the work end to end:
 - adding clients and opening cases
 - updating the checklist and moving stages, with the guards explained
 - uploading documents and template forms straight to storage
+- sharing the checklist with a client, who uploads the requested documents from a private link without an account
 - sending reminders
 - editing and publishing templates
 - managing the team, access tokens and the agency colour

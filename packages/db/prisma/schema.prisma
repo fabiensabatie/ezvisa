@@ -85,6 +85,8 @@ enum Via {
   DASHBOARD
   MCP
   SYSTEM
+  /// A client, through a shared upload link. The audit row has no employee.
+  CLIENT
 }
 
 model Role {
@@ -272,18 +274,20 @@ model TemplateVersion {
 }
 
 model TemplateItem {
-  id          String          @id @default(uuid(7)) @db.Uuid
-  versionId   String          @db.Uuid
-  version     TemplateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
-  position    Int
-  label       String
-  description String?
-  kind        ItemKind        @default(DOCUMENT)
-  required    Boolean         @default(true)
+  id           String          @id @default(uuid(7)) @db.Uuid
+  versionId    String          @db.Uuid
+  version      TemplateVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  position     Int
+  label        String
+  description  String?
+  kind         ItemKind        @default(DOCUMENT)
+  required     Boolean         @default(true)
   /// e.g. { "maxAgeDays": 7 } for a bank letter
-  rules       Json?
-  formFileId  String?         @db.Uuid
-  formFile    TemplateFile?   @relation(fields: [formFileId], references: [id])
+  rules        Json?
+  formFileId   String?         @db.Uuid
+  formFile     TemplateFile?   @relation(fields: [formFileId], references: [id])
+  /// The client can upload this item through the case's shared checklist link
+  clientUpload Boolean         @default(false)
 
   @@index([versionId])
 }
@@ -322,6 +326,7 @@ model Case {
   notes             String?
   items             CaseItem[]
   documents         Document[]
+  shareLinks        CaseShareLink[]
   createdAt         DateTime        @default(now())
   updatedAt         DateTime        @updatedAt
   closedAt          DateTime?
@@ -345,8 +350,27 @@ model CaseItem {
   note           String?
   flaggedByKind  EmployeeKind?
   updatedById    String?       @db.Uuid
+  /// Copied from the template item: listed on the client's upload page
+  clientUpload   Boolean       @default(false)
   documents      Document[]
   updatedAt      DateTime      @updatedAt
+
+  @@index([caseId])
+}
+
+/// A link a client opens, without signing in, to upload the documents their case needs.
+/// Only the SHA-256 of the secret is stored; the secret travels in the URL fragment.
+model CaseShareLink {
+  id          String    @id @default(uuid(7)) @db.Uuid
+  caseId      String    @db.Uuid
+  case        Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  hash        String    @unique
+  createdById String    @db.Uuid
+  expiresAt   DateTime
+  revokedAt   DateTime?
+  lastUsedAt  DateTime?
+  uploads     Int       @default(0)
+  createdAt   DateTime  @default(now())
 
   @@index([caseId])
 }

@@ -8,9 +8,10 @@ import {
   settings,
   team,
   templates,
+  uploadLinks,
 } from "@ezvisa/core";
 import { z } from "zod";
-import { protectedProcedure, publicProcedure, router } from "./trpc.js";
+import { clientProcedure, protectedProcedure, publicProcedure, router } from "./trpc.js";
 
 /**
  * The dashboard API. Every procedure is a thin wrapper over a core service, which checks
@@ -53,6 +54,32 @@ export const appRouter = router({
     close: protectedProcedure
       .input(cases.closeCaseInput)
       .mutation(({ ctx, input }) => cases.closeCase(ctx.domain, input)),
+    /** The link a client uses to upload their documents; replaces any earlier link. */
+    shareUploadLink: protectedProcedure
+      .input(uploadLinks.createUploadLinkInput)
+      .mutation(({ ctx, input }) => uploadLinks.createUploadLink(ctx.domain, input)),
+    revokeUploadLink: protectedProcedure
+      .input(uploadLinks.revokeUploadLinkInput)
+      .mutation(({ ctx, input }) => uploadLinks.revokeUploadLink(ctx.domain, input)),
+  }),
+
+  /**
+   * The client's upload page. No session: the link's secret is the credential, sent in
+   * the request body (never the URL) so it stays out of access logs.
+   */
+  upload: router({
+    view: clientProcedure
+      .input(uploadLinks.linkInput)
+      .mutation(({ ctx, input }) => uploadLinks.viewUploadPage(ctx.client, input)),
+    acceptPrivacyNotice: clientProcedure
+      .input(uploadLinks.linkInput)
+      .mutation(({ ctx, input }) => uploadLinks.acceptPrivacyNotice(ctx.client, input)),
+    createUpload: clientProcedure
+      .input(uploadLinks.clientUploadInput)
+      .mutation(({ ctx, input }) => uploadLinks.createClientUpload(ctx.client, input)),
+    confirmUpload: clientProcedure
+      .input(uploadLinks.confirmClientUploadInput)
+      .mutation(({ ctx, input }) => uploadLinks.confirmClientUpload(ctx.client, input)),
   }),
 
   clients: router({

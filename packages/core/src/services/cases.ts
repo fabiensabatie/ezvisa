@@ -96,6 +96,8 @@ const detailInclude = {
     },
   },
   documents: { where: { deletedAt: null }, orderBy: { createdAt: "desc" } },
+  // The client upload link currently in force, if any (never the secret itself).
+  shareLinks: { where: { revokedAt: null }, orderBy: { createdAt: "desc" }, take: 1 },
 } as const satisfies Prisma.CaseInclude;
 
 async function loadCase(tx: Tx, ref: string) {
@@ -219,6 +221,7 @@ export async function createCase(ctx: Context, raw: z.input<typeof createCaseInp
             label: item.label,
             kind: item.kind,
             required: item.required,
+            clientUpload: item.clientUpload,
           })),
         },
       },
