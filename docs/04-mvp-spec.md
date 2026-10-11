@@ -169,6 +169,7 @@ enum Via {
   MCP
   SYSTEM
   CLIENT // the client, through a shared upload link
+  CHAT   // an agent, answering in the shared inbox
 }
 
 model Role {
@@ -346,6 +347,47 @@ model CaseItem {
   updatedById    String?       @db.Uuid
   documents      Document[]
   updatedAt      DateTime      @updatedAt
+}
+
+// Someone writing in the shared inbox (Chatwoot), and the client they turned out to be.
+// Client agents say nothing about a case until the contact is linked (section 6.6).
+model ChatContact {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  chatwootId   Int       @unique // the contact's id in Chatwoot
+  clientId     String?   @db.Uuid
+  client       Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  name         String?
+  channel      String?   // e.g. "Channel::Line"
+  linkedAt     DateTime?
+  linkedById   String?   @db.Uuid // null when the assistant checked the identity
+  failedChecks Int       @default(0) // identity checks failed today; three hands over
+  lastFailedAt DateTime?
+  employeeId   String?   @db.Uuid // for team agents: the employee writing, linked by an owner
+  employee     Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([clientId])
+}
+
+enum AgentAudience {
+  CLIENTS // answers clients, one identified client at a time
+  TEAM    // answers employees whose chat accounts are linked
+}
+
+// An AI agent answering in the shared inbox, configured from the dashboard (section 6.6).
+model Agent {
+  id            String        @id @default(uuid(7)) @db.Uuid
+  name          String        @unique
+  audience      AgentAudience @default(CLIENTS)
+  instructions  String        @default("")
+  model         String        @default("claude-sonnet-5-5")
+  enabled       Boolean       @default(true)
+  employeeId    String        @unique @db.Uuid // its own team member, kind ASSISTANT; the role decides its tools
+  employee      Employee      @relation(fields: [employeeId], references: [id])
+  chatwootBotId Int?          @unique // its agent bot in Chatwoot
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 }
 
 // The link a client opens to upload what the checklist asks of them. One in force per case.
@@ -549,6 +591,7 @@ To connect claude.ai: Settings → Connectors → Add custom connector, URL `<AP
 | `POST /auth/login`, `POST /auth/logout`, `GET /auth/me` | Dashboard session |
 | `/trpc/*` | Dashboard API, session cookie required. The `upload.*` procedures are the exception: the client upload page calls them with the link's secret instead (section 6.5) |
 | `POST /mcp` | MCP Streamable HTTP endpoint, bearer token required |
+| `POST /chat/webhook/:agentId` | Chatwoot's webhooks for one agent, signed with its bot's secret (section 6.6) |
 | `GET /.well-known/oauth-protected-resource/mcp`, `GET /.well-known/oauth-authorization-server` | OAuth discovery for MCP connectors (when `APP_URL` is set) |
 | `POST /register`, `GET`/`POST /authorize`, `POST /token`, `POST /revoke` | OAuth for MCP connectors: registration, consent, tokens, revocation |
 | `GET /health` | Liveness and database check for Railway |
@@ -560,7 +603,7 @@ Both `/trpc` and `/mcp` build the same `Context`:
 
 ```ts
 type Actor = { employeeId: string; kind: "HUMAN" | "ASSISTANT"; permissions: Permissions; tokenId: string };
-type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM" | "CLIENT"; db: PrismaClient; storage: Storage; now: () => Date };
+type Context = { actor: Actor; via: "DASHBOARD" | "MCP" | "SYSTEM" | "CLIENT" | "CHAT"; db: PrismaClient; storage: Storage; now: () => Date };
 ```
 
 `core` services take `(ctx, input)`, validate `input` with Zod, check permissions, run in a transaction, and write the audit log. The tRPC routers and the MCP tools are thin wrappers over these services.
@@ -593,6 +636,43 @@ An employee shares the client's part of a checklist in one click: "Share checkli
 - Before the first upload the client accepts the privacy notice on the page, which sets `Client.consentAt` if it was not set.
 - Each file lands as a `Document` on the case, linked to its item. A MISSING or FLAGGED item becomes RECEIVED, for a person to verify. The audit log records the client as the actor (`via: CLIENT`, no employee), and the activity feed reads "The client uploaded …".
 - Limits: 100 uploads per link, 60 requests per minute per IP, and the usual document size and type rules.
+
+### 6.6 Shared inbox and agents
+
+Clients write on LINE, Messenger and WhatsApp. A self-hosted Chatwoot (Railway project `ezvisa-chat`, section 12.1) gathers every channel in one inbox. EzVisa connects to it with an administrator's access token (`CHATWOOT_URL`, `CHATWOOT_API_TOKEN`), shows it on its own Inbox page, and answers in it through agents configured on the Agents page. Setup and day-to-day use: [05-chat-inbox.md](05-chat-inbox.md).
+
+- **Agents.**
+  - Each has a name, an audience (clients or the team), a role, a model, instructions and the inboxes it answers. Owners (team: full) manage them.
+  - Each acts as its own employee of kind ASSISTANT, so it can never verify an item or approve a pack, and is audited with `via: CHAT` under its name.
+  - Each has its own agent bot in Chatwoot. An inbox has one agent.
+- **Who owns a conversation** follows Chatwoot's status: *pending* belongs to the inbox's agent, *open* to the team.
+- **Webhook.**
+  - `POST /chat/webhook/:agentId` checks the `X-Chatwoot-Signature` HMAC (SHA-256 of `timestamp.body` with that bot's secret) and a timestamp under 5 minutes old, and drops repeated deliveries.
+  - It answers at once and writes the reply in the background.
+  - Replies wait 4 seconds for follow-up messages, one conversation at a time.
+- **Tools are EzVisa's MCP tools**, run in-process through the same definitions, permission filter, errors and audit as `/mcp`, filtered by the agent's role. Two chat tools are added: `check_identity` (client agents) and `hand_to_team`. The model sees the tools as JSON Schema, the latest messages of the conversation (about 20; attachments are described, not sent), the rules for its audience, the MCP house rules, the agency notes and its own instructions. The stable part is a cached prompt prefix. A reply uses at most eight tool rounds.
+- **Client agents** work on one identified client.
+  - A contact is linked to a client in one of three ways:
+    - full name (any word order, accents ignored) and date of birth matching exactly one client;
+    - a WhatsApp number matching exactly one client;
+    - a person.
+
+    Three failed checks in 24 hours lock the check.
+  - Every tool call goes through a deny-by-default scope:
+    - inputs naming a client must name that client;
+    - case and document references must belong to them;
+    - lists are forced to that client;
+    - tools that cannot be scoped are not offered: listing all clients, reminders, team, template editing and inbox tools.
+  - Before identification only templates and `whoami` work.
+- **Team agents** answer only chat contacts an owner linked to an active employee, with the intersection of the agent's role and that employee's role.
+- **Handing over.** An agent hands over on request, on judgement calls, on urgency, after 30 replies in a day, or when there is no API key. It posts a private note with the reason and a summary, sets the conversation to *open*, and sends a push notification (without client details) that opens `/inbox/<id>` to people with clients: edit.
+- **Stepping back.** In Chatwoot's community edition a person replying leaves a conversation *pending*. If someone on the team wrote in the last 12 hours, the agent stays silent and opens the conversation. When a conversation goes back to *pending*, the agent posts a private note ("answering again"), and earlier replies from the team no longer silence it.
+- **The team's side.**
+  - The Inbox lists conversations by status and inbox, with unread counts.
+  - Each conversation shows its messages, attachments and private notes. It also shows who is writing: for a client, their open cases.
+  - From there the team can reply (taking the conversation from the agent), leave private notes, take over, hand back, resolve, link a client or (owners) a team member, and mark the conversation read.
+  - Replies are posted with the administrator's token, so Chatwoot counts them as the team's.
+  - Linking a client writes an "EzVisa client" link on the Chatwoot contact.
 
 ---
 
@@ -628,6 +708,7 @@ An employee shares the client's part of a checklist in one click: "Share checkli
 | Case items | `update_case_item` (status, note, linked documents) | cases: edit |
 | Documents | `list_documents`, `get_document` (link and save-to-disk command), `read_document` (content, up to 10 MB), `upload_document`, `create_document_upload`, `confirm_document_upload`, `update_document` (fields read from it), `delete_document` | documents |
 | Reminders | `list_deadlines` (`within_days`), `list_reminders` (status), `mark_reminder_sent`, `skip_reminder`, `get_reminder_rules`, `update_reminder_rule` | reminders |
+| Shared inbox | `list_conversations`, `get_conversation`, `send_chat_message` (or a private note), `link_chat_contact`, `hand_conversation` (to the agent, the team, or resolved), `link_team_member` | clients: view / edit; team: full to link a team member |
 
 Token creation is deliberately not an MCP tool in the MVP. A leaked assistant token must not be able to mint new tokens.
 
@@ -639,7 +720,7 @@ Token creation is deliberately not an MCP tool in the MVP. A leaked assistant to
 
 ### 7.5 The AI loop in the MVP
 
-The server contains no model calls. The assistant does the reading and the writing through tools:
+The server makes no model calls for case work; it calls a model only for the agents answering in the shared inbox (section 6.6). The assistant does the reading and the writing through tools:
 
 1. A staff member asks Claude, connected through MCP: "Check Hans Becker's new uploads against his retirement checklist".
 2. Claude calls `get_case`, then `read_document` on each new file.
@@ -684,6 +765,7 @@ Default stay message:
 | Access requests | `get_client` with `include_all` exports everything held on a client, to answer PDPA access requests |
 | Client upload links | Secret in the URL fragment, stored hashed; upload only, never read; expire, revocable, replaced on re-share, dead once the case closes (section 6.5) |
 | Rate limits | Login 10 per minute per IP; MCP 120 requests per minute per token; client upload page 60 per minute per IP |
+| Chat | Webhooks must be signed and less than 5 minutes old. Client agents need an identity check, and each tool call is scoped to that client, deny by default. Team agents act with no more than the linked employee's permissions. No agent can verify or approve. Conversations stay in Chatwoot in Singapore. To write each reply, the latest messages and tool results go to Anthropic's API, which the privacy notice must mention |
 | Backups | Postgres point-in-time recovery, plus a nightly copy of new documents to a second bucket (section 12.6) |
 
 ---
@@ -699,15 +781,17 @@ Each screen matches a frame of the mockup.
 | `/login` | Sign in with a token | `POST /auth/login` |
 | `/upload#<secret>` | The client's upload page, outside the signed-in app (section 6.5) | `upload.*` |
 | `/` | Overview: counters, pipeline, needs attention, deadlines, activity | `dashboard.overview` |
+| `/inbox`, `/inbox/:id` | Shared inbox: conversations by status and inbox; a conversation with its messages, the reply box and who is writing (client and open cases, or team member) | `chat.*` |
+| `/agents` | Agents: audience, role, model, instructions, inboxes | `agents.*` |
 | `/cases` | Case board by stage | `cases.list` |
 | `/cases/:number` | Case detail: stage tracker, checklist, documents, forms, actions | `cases.get`, `caseItems.update`, `cases.moveStage` |
 | `/clients` | Client table with filters | `clients.list` |
-| `/clients/:id` | Client profile, deadlines, documents, cases (not in the mockup yet) | `clients.get` |
+| `/clients/:id` | Client profile, deadlines, documents, cases, linked chat conversations (not in the mockup yet) | `clients.get`, `chat.clientChats` |
 | `/reminders` | Upcoming expiries, schedule, message preview | `reminders.list`, `reminders.markSent` |
 | `/team` | People, roles and permission matrix | `employees.list`, `roles.list` |
 | `/templates` | Template cards | `templates.list` |
 | `/templates/:slug` | Checklist, forms and files, known failures, draft and publish | `templates.get`, template mutations |
-| `/settings` | Theme colour, tokens (list and revoke), MCP connection details | `settings.*`, `tokens.*` |
+| `/settings` | Theme colour, shared inbox (connection, notes every agent reads, pause, usage), tokens (list and revoke), MCP connection details | `settings.*`, `chat.overview`, `tokens.*` |
 
 M2 delivered every screen above in read-only form. M3 adds the write side, each control shown only to roles that can use it:
 
@@ -715,11 +799,13 @@ M2 delivered every screen above in read-only form. M3 adds the write side, each 
 |---|---|
 | Cases | New case: client, template, assignee, due date |
 | Case detail | The next stage in one click ("Start collecting", "Move to drafting", "Send for validation", "Approve the pack", "Log the outcome"); change stage or cancel with a note; edit assignee, due date and notes; per checklist item a one-tap "Verify" or "Upload", and a menu to set any status with its note and documents; upload documents to the case; "Share checklist with client": choose how long the link works, copy the link and message, or stop the current link |
-| Clients, client detail | New client, edit, record or withdraw consent, open a case, upload documents |
+| Clients, client detail | New client, edit, record or withdraw consent, open a case, upload documents, link or unlink a chat conversation |
 | Reminders | Send now, edit the message, copy, mark sent, skip; open a case from a deadline; edit the schedule |
 | Templates, template detail | New template; edit template (the first change starts a draft); add, edit, reorder and remove items, and tick the ones the client uploads; attach forms; edit known failures; publish with notes or discard the draft; archive |
 | Team | Add an employee, then create their token; edit; deactivate |
-| Settings | Make a colour the agency colour; the name in messages; create and revoke access tokens |
+| Settings | Make a colour the agency colour; the name in messages; pause the agents, edit the notes they all read; create and revoke access tokens |
+| Inbox | Reply, private note, take over, hand to agent, resolve; link the person to a client or (owners) a team member |
+| Agents | Create, edit, delete; choose their inboxes (owners) |
 
 The mockup draws most of these buttons without behaviour, so their flows follow the rules in section 4.3: the server refuses what the role or the guards do not allow, and the dashboard shows the reason.
 
@@ -763,6 +849,10 @@ pnpm dev
 | `BACKUP_S3_*` (same five) | server, backup job | References to the `documents-backup` bucket |
 | `APP_URL` | server (cookies, links in messages, OAuth issuer for MCP connectors) | The custom domain in production, the Railway domain elsewhere. Falls back to `https://$RAILWAY_PUBLIC_DOMAIN` when unset |
 | `SEED_OWNER_TOKEN` | seed script, non-production only | Shared variable on PR environments |
+| `CHATWOOT_URL` | server (shared inbox) | The Chatwoot service's public address |
+| `CHATWOOT_API_TOKEN` | server (shared inbox) | Set by hand: a Chatwoot administrator's access token |
+| `CHATWOOT_ACCOUNT_ID` | server (optional) | Unset: account 1 |
+| `ANTHROPIC_API_KEY` | server (agents) | Set by hand on `ezvisa`. Without it, conversations go to the team. Each agent picks its model in the dashboard |
 | `NODE_ENV`, `PORT` | server | `PORT` is injected by Railway |
 
 Locally, the same names live in `.env`, pointing at the docker compose Postgres and S3Mock. S3Mock needs path-style URLs, hence `S3_FORCE_PATH_STYLE=true` locally.
@@ -795,6 +885,7 @@ Everything runs in the Singapore region, in the Railway project `considerate-vit
 | `Postgres` | Railway Postgres | Singapore | Private network only; point-in-time recovery on |
 | `documents` | Railway Bucket | `sin` (Singapore) | Client documents and template files |
 | `documents-backup` (planned) | Railway Bucket | `sin` (Singapore) | Nightly copy of new objects and weekly database dumps. Created together with the backup job. |
+| Project `ezvisa-chat`: `Chatwoot`, `Postgres` (pgvector), `Valkey` | Railway's Chatwoot template, in its own project | Singapore | The shared inbox (section 6.6). Private databases, sign-ups closed. See `.railway/README.md`. |
 
 **Why one service.** The dashboard and the API share one origin, so the session cookie needs no cross-origin setup. It is also the smallest bill. The web build can move to its own static service later without code changes.
 

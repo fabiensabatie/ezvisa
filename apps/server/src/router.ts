@@ -1,5 +1,7 @@
 import {
+  agents,
   cases,
+  chat,
   clients,
   dashboard,
   documents,
@@ -131,6 +133,59 @@ export const appRouter = router({
     updateRule: protectedProcedure
       .input(reminders.updateReminderRuleInput)
       .mutation(({ ctx, input }) => reminders.updateReminderRule(ctx.domain, input)),
+  }),
+
+  /** The shared inbox (Chatwoot): conversations, settings shared by the agents, links. */
+  chat: router({
+    overview: protectedProcedure.query(({ ctx }) => chat.chatOverview(ctx.domain)),
+    updateSettings: protectedProcedure
+      .input(chat.updateChatSettingsInput)
+      .mutation(({ ctx, input }) => chat.updateChatSettings(ctx.domain, input)),
+    inboxes: protectedProcedure.query(({ ctx }) => chat.chatInboxes(ctx.domain)),
+    markRead: protectedProcedure
+      .input(chat.getConversationInput)
+      .mutation(({ ctx, input }) => chat.markConversationRead(ctx.domain, input)),
+    linkTeamMember: protectedProcedure
+      .input(chat.linkTeamMemberInput)
+      .mutation(({ ctx, input }) => chat.linkTeamMember(ctx.domain, input)),
+    conversations: protectedProcedure
+      .input(chat.listConversationsInput)
+      .query(({ ctx, input }) => chat.listConversations(ctx.domain, input)),
+    conversation: protectedProcedure
+      .input(chat.getConversationInput)
+      .query(({ ctx, input }) => chat.getConversation(ctx.domain, input)),
+    clientChats: protectedProcedure
+      .input(chat.clientChatsInput)
+      .query(({ ctx, input }) => chat.clientChats(ctx.domain, input)),
+    send: protectedProcedure
+      .input(chat.sendChatMessageInput)
+      .mutation(({ ctx, input }) => chat.sendChatMessage(ctx.domain, input)),
+    link: protectedProcedure
+      .input(chat.linkChatContactInput)
+      .mutation(({ ctx, input }) => chat.linkChatContact(ctx.domain, input)),
+    unlink: protectedProcedure
+      .input(chat.unlinkChatContactInput)
+      .mutation(({ ctx, input }) => chat.unlinkChatContact(ctx.domain, input)),
+    hand: protectedProcedure
+      .input(chat.handConversationInput)
+      .mutation(({ ctx, input }) => chat.handConversation(ctx.domain, input)),
+  }),
+
+  /** AI agents answering in the shared inbox, each with its role and inboxes. */
+  agents: router({
+    list: protectedProcedure.query(({ ctx }) => agents.listAgents(ctx.domain)),
+    create: protectedProcedure
+      .input(agents.createAgentInput)
+      .mutation(({ ctx, input }) => agents.createAgent(ctx.domain, input)),
+    update: protectedProcedure
+      .input(agents.updateAgentInput)
+      .mutation(({ ctx, input }) => agents.updateAgent(ctx.domain, input)),
+    setInboxes: protectedProcedure
+      .input(agents.setAgentInboxesInput)
+      .mutation(({ ctx, input }) => agents.setAgentInboxes(ctx.domain, input)),
+    delete: protectedProcedure
+      .input(agents.agentRefInput)
+      .mutation(({ ctx, input }) => agents.deleteAgent(ctx.domain, input)),
   }),
 
   notifications: router({

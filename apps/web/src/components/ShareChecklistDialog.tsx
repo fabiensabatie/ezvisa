@@ -1,4 +1,4 @@
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { formatInstant } from "../lib/format";
 import { toast } from "../lib/toast";
@@ -34,6 +34,9 @@ export function ShareChecklistDialog({ c, onClose }: { c: CaseDetail; onClose: (
   const trpc = useTRPC();
   const share = useMutation(trpc.cases.shareUploadLink.mutationOptions({ meta: { quiet: true } }));
   const revoke = useMutation(trpc.cases.revokeUploadLink.mutationOptions());
+  const chats = useQuery(trpc.chat.clientChats.queryOptions({ clientId: c.client.id }));
+  const send = useMutation(trpc.chat.send.mutationOptions({ meta: { keepCache: true } }));
+  const chatContact = chats.data?.contacts[0];
   const [days, setDays] = useState("14");
   const [shared, setShared] = useState<Shared | null>(null);
   const [message, setMessage] = useState("");
@@ -96,6 +99,22 @@ export function ShareChecklistDialog({ c, onClose }: { c: CaseDetail; onClose: (
             <Button variant="outline" icon="copy" onClick={() => copy(message, "Message")}>
               Copy message
             </Button>
+            {chatContact && (
+              <Button
+                variant="soft"
+                icon="send"
+                pending={send.isPending}
+                disabled={send.isSuccess}
+                onClick={() =>
+                  send.mutate(
+                    { clientId: c.client.id, text: message },
+                    { onSuccess: () => toast.success(`Sent on ${chatContact.channel}`) },
+                  )
+                }
+              >
+                {send.isSuccess ? "Sent" : `Send on ${chatContact.channel}`}
+              </Button>
+            )}
             <Button onClick={onClose}>Done</Button>
           </div>
         </div>

@@ -32,6 +32,8 @@ self.addEventListener("notificationclick", (event) => {
   const url = new URL(event.notification.data?.url || "/", self.location.origin).href;
   event.waitUntil(
     self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      // Links elsewhere (a conversation in Chatwoot) open beside the dashboard, not over it.
+      if (!url.startsWith(self.location.origin)) return self.clients.openWindow(url);
       const open = windows.find((w) => w.url.startsWith(self.location.origin));
       if (open) return open.focus().then((w) => w.navigate(url));
       return self.clients.openWindow(url);

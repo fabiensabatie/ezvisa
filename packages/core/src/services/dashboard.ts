@@ -3,11 +3,18 @@ import { type Context, requireLevel } from "../context.js";
 import { addDays, bangkokToday, daysBetween, formatDateOnly, parseDateOnly } from "../dates.js";
 import { hasLevel } from "../permissions.js";
 import { caseNumber } from "../refs.js";
+import { waitingConversations } from "./chat.js";
 import { listDeadlines } from "./reminders.js";
 
 const OPEN = ["NEW", "COLLECTING", "DRAFTING", "VALIDATION", "SUBMISSION"] as const;
 const STAGES = [...OPEN, "DONE"] as const;
-const QUIET_ACTIONS = ["document.read", "document.url_issued", "template.draft_created"];
+/** Too frequent or too minor for the overview. Every chat reply is still in the audit log. */
+const QUIET_ACTIONS = [
+  "document.read",
+  "document.url_issued",
+  "template.draft_created",
+  "chat.replied",
+];
 
 /** Counts for the sidebar badges. */
 export async function navCounts(ctx: Context) {
@@ -29,7 +36,7 @@ export async function navCounts(ctx: Context) {
       ? ctx.db.template.count({ where: { archivedAt: null } })
       : Promise.resolve(null),
   ]);
-  return { openCases, clients, remindersDue, templates };
+  return { openCases, clients, remindersDue, templates, inbox: await waitingConversations(ctx) };
 }
 
 type Described = { id: string; at: string; actor: string; text: string; kind: string };
@@ -38,7 +45,14 @@ async function describeActivity(ctx: Context, entries: AuditLog[]): Promise<Desc
   const ids = (entity: string) => entries.filter((e) => e.entity === entity).map((e) => e.entityId);
   const [employees, caseRows, items, clientRows, templateRows] = await Promise.all([
     ctx.db.employee.findMany({
-      where: { id: { in: entries.map((e) => e.actorId).filter((x): x is string => !!x) } },
+      where: {
+        id: {
+          in: [
+            ...entries.map((e) => e.actorId).filter((x): x is string => !!x),
+            ...ids("Employee"),
+          ],
+        },
+      },
     }),
     ctx.db.case.findMany({ where: { id: { in: ids("Case") } }, include: { client: true } }),
     ctx.db.caseItem.findMany({
@@ -71,6 +85,49 @@ async function describeActivity(ctx: Context, entries: AuditLog[]): Promise<Desc
         break;
       case "case.upload_link_revoked":
         text = `revoked the upload link for ${caseLabel}`;
+        break;
+      case "chat.contact_linked":
+        text = `linked a chat conversation to ${client?.fullName ?? "a client"}`;
+        break;
+      case "chat.contact_unlinked":
+        text = `unlinked a chat conversation from ${client?.fullName ?? "a client"}`;
+        break;
+      case "chat.handed_off":
+        text = `passed a ${String(after(e).channel ?? "chat")} conversation to the team`;
+        break;
+      case "chat.handed_to_agent":
+        text = "handed a conversation back to its agent";
+        break;
+      case "chat.taken_over":
+        text = "took over a conversation from its agent";
+        break;
+      case "chat.resolved":
+        text = "resolved a conversation";
+        break;
+      case "chat.message_sent":
+        text = "wrote to a client in chat";
+        break;
+      case "chat.note_added":
+        text = "left a private note in a conversation";
+        break;
+      case "chat.team_member_linked":
+        text = `linked a chat account to ${name(e.entityId)}`;
+        break;
+      case "chat.settings_updated":
+        text = "updated the notes every agent reads";
+        break;
+      case "agent.created":
+        text = `created the agent ${String(after(e).name ?? "")}`.trim();
+        break;
+      case "agent.updated":
+        text = `updated the agent ${String(after(e).name ?? "")}`.trim();
+        break;
+      case "agent.inboxes_set":
+        text = "changed which inboxes an agent answers";
+        break;
+      case "agent.deleted":
+        text =
+          `deleted the agent ${String((e.before as { name?: string } | null)?.name ?? "")}`.trim();
         break;
       case "client.updated":
         text = `updated ${client?.fullName ?? "a client"}`;

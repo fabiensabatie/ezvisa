@@ -1,6 +1,7 @@
 import { THEME_PRESETS } from "@ezvisa/ui";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { useState } from "react";
+import { ChatSettingsCard } from "../components/ChatSettingsCard";
 import { Button, FormDialog, INPUT } from "../components/controls";
 import { Icon } from "../components/Icon";
 import { NotificationsCard } from "../components/NotificationsCard";
@@ -269,11 +270,15 @@ export function SettingsPage() {
 
   return (
     <>
-      <PageHeader title="Settings" subtitle="Theme, access tokens and the MCP server" />
+      <PageHeader
+        title="Settings"
+        subtitle="Theme, chat assistant, access tokens and the MCP server"
+      />
       <div className="flex flex-col gap-5">
         <Theme />
         {can("reminders", "edit") && <NotificationsCard />}
         {can("settings", "edit") && <Agency />}
+        {can("settings", "view") && <ChatSettingsCard />}
         {can("team", "full") && <Tokens myTokenId={me.data?.token?.id} />}
         <QueryView query={me} what="your account">
           {(m) => (

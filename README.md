@@ -12,16 +12,19 @@ The idea in one line: a **case operating system** where every client has cases, 
 | [docs/02-orchestration.md](docs/02-orchestration.md) | How the pieces fit: domain model, case pipeline, human-in-the-loop rules, knowledge base loop, system architecture, MVP scope |
 | [docs/03-open-questions.md](docs/03-open-questions.md) | Questions to validate with Namtarn before building |
 | [docs/04-mvp-spec.md](docs/04-mvp-spec.md) | MVP technical spec: monorepo layout, Postgres schema, token auth, MCP tools, dashboard screens, reminders, Railway deployment, milestones |
+| [docs/05-chat-inbox.md](docs/05-chat-inbox.md) | The shared inbox (Chatwoot) and the agents: setup steps for LINE, Messenger and WhatsApp, the Inbox, agents and their scope, handovers, privacy and costs |
 
 The dashboard mockup is a clickable design canvas: [EzVisa Dashboard Mockup](https://claude.ai/artifact/9wYcfb4LczHrm8zdNjktcV).
 
 ## Status
 
-M0 to M3 are deployed on Railway in Singapore, and M4 adds OAuth for MCP connectors. The MCP server exposes 57 tools over clients, cases, documents, templates, reminders and the team, each token seeing only what its role allows. The dashboard signs in with the same tokens and runs the work end to end:
+M0 to M3 are deployed on Railway in Singapore, and M4 adds OAuth for MCP connectors. The MCP server exposes 63 tools over clients, cases, documents, templates, reminders, the shared inbox and the team, each token seeing only what its role allows. The dashboard signs in with the same tokens and runs the work end to end:
 - adding clients and opening cases
 - updating the checklist and moving stages, with the guards explained
 - uploading documents and template forms straight to storage
 - sharing the checklist with a client, who uploads the requested documents from a private link without an account
+- a shared inbox for LINE, Messenger and WhatsApp (self-hosted Chatwoot), worked from the dashboard's Inbox next to each client's cases
+- agents, configured in the dashboard, that answer in that inbox through EzVisa's MCP tools: client agents on the identified client's records only, team agents with the linked colleague's permissions ([docs/05-chat-inbox.md](docs/05-chat-inbox.md))
 - sending reminders
 - editing and publishing templates
 - managing the team, access tokens and the agency colour

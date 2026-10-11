@@ -1,7 +1,14 @@
 import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
-import { LOCAL_STORAGE_PATH, LocalDiskStorage, type PushSender, type Storage } from "@ezvisa/core";
+import {
+  type ChatAgents,
+  type ChatConnection,
+  LOCAL_STORAGE_PATH,
+  LocalDiskStorage,
+  type PushSender,
+  type Storage,
+} from "@ezvisa/core";
 import type { Db } from "@ezvisa/db";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import express, { type Express } from "express";
@@ -32,9 +39,21 @@ export type AppOptions = {
    * OAuth for MCP connectors; without it, /mcp accepts personal tokens only.
    */
   publicUrl?: string;
+  /** The shared inbox (Chatwoot). Null turns the chat features off. */
+  chat?: ChatConnection | null;
+  /** The agents answering in the shared inbox. Chatwoot calls /chat/webhook/:agentId. */
+  agents?: ChatAgents | null;
 };
 
-const API_PREFIXES = ["/trpc", "/auth", "/mcp", "/health", "/.well-known", LOCAL_STORAGE_PATH];
+const API_PREFIXES = [
+  "/trpc",
+  "/auth",
+  "/mcp",
+  "/chat",
+  "/health",
+  "/.well-known",
+  LOCAL_STORAGE_PATH,
+];
 /** OAuth endpoints served by the MCP SDK at the root. */
 const API_PATHS = new Set(["/authorize", "/token", "/register", "/revoke"]);
 
@@ -50,6 +69,8 @@ export function createApp({
   secureCookies = process.env.NODE_ENV === "production",
   uploadOrigins = [],
   publicUrl,
+  chat = null,
+  agents = null,
 }: AppOptions): Express {
   const origin = publicUrl?.replace(/\/+$/, "");
   const app = express();
@@ -65,6 +86,33 @@ export function createApp({
     }
   });
 
+  // Chatwoot signs each webhook over the exact bytes it sent, so the body stays raw text.
+  app.post(
+    "/chat/webhook/:agentId",
+    express.text({ type: "*/*", limit: "1mb" }),
+    async (req, res) => {
+      if (!agents) {
+        res.status(404).json({ error: "Chat agents are not configured." });
+        return;
+      }
+      try {
+        const raw = typeof req.body === "string" ? req.body : "";
+        const result = await agents.receive(String(req.params.agentId), raw, {
+          signature: req.get("x-chatwoot-signature"),
+          timestamp: req.get("x-chatwoot-timestamp"),
+          delivery: req.get("x-chatwoot-delivery"),
+        });
+        res.status(result.status).json({ queued: result.queued });
+      } catch (error) {
+        console.log(
+          JSON.stringify({ level: "error", msg: "chat webhook failed", error: String(error) }),
+        );
+        // A 500 makes Chatwoot retry, which is what a passing failure deserves.
+        res.status(500).json({ error: "Could not handle the webhook." });
+      }
+    },
+  );
+
   app.use(authRouter({ db, now, secureCookies, loginRateLimit }));
   if (origin) app.use(oauthRouter({ db, publicUrl: origin, now }));
   app.use(
@@ -76,6 +124,7 @@ export function createApp({
       rateLimit: mcpRateLimit,
       resourceMetadataUrl: origin ? resourceMetadataUrl(origin) : undefined,
       ...(origin ? { appUrl: origin } : {}),
+      chat,
     }),
   );
   if (storage instanceof LocalDiskStorage) app.use(devStorageRouter(storage, uploadOrigins));
@@ -95,6 +144,7 @@ export function createApp({
           actor,
           ip: req.ip ?? "",
           appUrl: origin ?? null,
+          chat,
         };
       },
     }),

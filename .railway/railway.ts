@@ -43,6 +43,12 @@ export default defineRailway(() => {
       S3_ACCESS_KEY_ID: "${{documents.ACCESS_KEY_ID}}",
       S3_SECRET_ACCESS_KEY: "${{documents.SECRET_ACCESS_KEY}}",
       SEED_OWNER_EMAIL: preserve(),
+      // The shared inbox: Chatwoot runs in its own Railway project, "ezvisa-chat" (see
+      // README.md). The token is a Chatwoot administrator's access token and the API key
+      // pays for the agents; both are set by hand and never written here.
+      CHATWOOT_URL: "https://chatwoot-production-22d6.up.railway.app",
+      CHATWOOT_API_TOKEN: preserve(),
+      ANTHROPIC_API_KEY: preserve(),
     },
   });
 

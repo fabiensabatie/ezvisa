@@ -1,10 +1,11 @@
 import type { Db, Prisma } from "@ezvisa/db";
+import type { ChatConnection } from "./chat/chatwoot.js";
 import { DomainError } from "./errors.js";
 import { hasLevel, type Level, type Permissions, type Resource } from "./permissions.js";
 import type { PushSender } from "./services/notifications.js";
 import type { Storage } from "./storage.js";
 
-export type Via = "DASHBOARD" | "MCP" | "SYSTEM";
+export type Via = "DASHBOARD" | "MCP" | "SYSTEM" | "CHAT";
 
 /** Who is acting. Built from a token for both the dashboard and MCP. */
 export type Actor = {
@@ -28,6 +29,8 @@ export type Context = {
   push?: PushSender | null;
   /** The dashboard's public address, e.g. https://app.example.com, for links sent to clients. */
   appUrl?: string | null;
+  /** The shared inbox (Chatwoot). Null when it is not connected. */
+  chat?: ChatConnection | null;
 };
 
 /** A Prisma client usable inside or outside a transaction. */

@@ -5,6 +5,46 @@ export {
   authenticateToken,
   bearerToken,
 } from "./auth.js";
+
+export {
+  type ChatConnection,
+  type ChatwootAgentBot,
+  type ChatwootApi,
+  type ChatwootContact,
+  type ChatwootConversation,
+  type ChatwootInbox,
+  type ChatwootMessage,
+  channelName,
+  chatFromEnv,
+  conversationUrl,
+  HttpChatwoot,
+  MESSAGE_TYPE,
+} from "./chat/chatwoot.js";
+export {
+  type ChatBlock,
+  type ChatModel,
+  type ChatRequest,
+  type ChatResponse,
+  ClaudeChatModel,
+  chatModelsFromEnv,
+  DEFAULT_CHAT_MODEL,
+} from "./chat/model.js";
+export {
+  ChatAgents,
+  type ChatAgentsDeps,
+  type ProcessResult,
+  RESUMED_NOTE,
+  type WebhookHeaders,
+} from "./chat/runtime.js";
+export { webhookUrl } from "./chat/setup.js";
+export {
+  type AgentToolbox,
+  type AgentToolContent,
+  type AgentToolOutcome,
+  type AgentToolSpec,
+  clientScopedTools,
+  scopeToClient,
+} from "./chat/toolbox.js";
 export {
   type Actor,
   type Context,
@@ -23,6 +63,7 @@ export { LOCAL_STORAGE_PATH, LocalDiskStorage } from "./local-storage.js";
 export { type Page, pageArgs, pageInput, toPage } from "./pagination.js";
 export {
   hasLevel,
+  intersectPermissions,
   LEVELS,
   type Level,
   NO_PERMISSIONS,
@@ -36,7 +77,9 @@ export {
 } from "./permissions.js";
 export { caseNumber, caseRef, caseWhere, templateRef, templateWhere } from "./refs.js";
 export { ASSISTANT_EMAIL, REMINDER_RULES, seedBase } from "./seed-base.js";
+export * as agents from "./services/agents.js";
 export * as cases from "./services/cases.js";
+export * as chat from "./services/chat.js";
 export * as clients from "./services/clients.js";
 export * as dashboard from "./services/dashboard.js";
 export * as documents from "./services/documents.js";

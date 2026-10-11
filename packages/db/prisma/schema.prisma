@@ -16,6 +16,14 @@ enum EmployeeKind {
   ASSISTANT
 }
 
+/// Who an agent answers in the shared inbox.
+enum AgentAudience {
+  /// Clients: case information only after an identity check, and only theirs
+  CLIENTS
+  /// The agency's own people, whose chat accounts are linked to employees
+  TEAM
+}
+
 enum Channel {
   LINE
   WHATSAPP
@@ -87,6 +95,8 @@ enum Via {
   SYSTEM
   /// A client, through a shared upload link. The audit row has no employee.
   CLIENT
+  /// An agent, answering in the shared inbox (Chatwoot).
+  CHAT
 }
 
 model Role {
@@ -114,6 +124,8 @@ model Employee {
   oauthCodes        OAuthCode[]
   pushSubscriptions PushSubscription[]
   assigned          Case[]             @relation("assignee")
+  agent             Agent?
+  chatContacts      ChatContact[]
   createdAt         DateTime           @default(now())
   updatedAt         DateTime           @updatedAt
 }
@@ -232,6 +244,7 @@ model Client {
   cases         Case[]
   documents     Document[]
   reminders     Reminder[]
+  chatContacts  ChatContact[]
   createdAt     DateTime   @default(now())
   updatedAt     DateTime   @updatedAt
   deletedAt     DateTime?
@@ -356,6 +369,52 @@ model CaseItem {
   updatedAt      DateTime      @updatedAt
 
   @@index([caseId])
+}
+
+/// Someone writing to the agency in the shared inbox (Chatwoot: LINE, Messenger, WhatsApp...),
+/// and the client they turned out to be. Client agents say nothing about a case until
+/// the contact is linked: by the client's full name and date of birth, or by a person.
+model ChatContact {
+  id           String    @id @default(uuid(7)) @db.Uuid
+  /// The contact's id in Chatwoot
+  chatwootId   Int       @unique
+  clientId     String?   @db.Uuid
+  client       Client?   @relation(fields: [clientId], references: [id], onDelete: SetNull)
+  name         String?
+  /// The inbox's channel when first seen, e.g. "Channel::Line"
+  channel      String?
+  linkedAt     DateTime?
+  /// The employee who linked it; null when an agent checked the client's identity
+  linkedById   String?   @db.Uuid
+  /// Failed identity checks in the last 24 hours; at three the check locks
+  failedChecks Int       @default(0)
+  lastFailedAt DateTime?
+  /// For team agents: the employee writing from this chat account, linked by an owner
+  employeeId   String?   @db.Uuid
+  employee     Employee? @relation(fields: [employeeId], references: [id], onDelete: SetNull)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([clientId])
+}
+
+/// An AI agent answering in the shared inbox, configured from the dashboard. It acts as its
+/// own employee (kind ASSISTANT), whose role decides which MCP tools it may use, and answers
+/// in the inboxes its Chatwoot bot is assigned to.
+model Agent {
+  id            String        @id @default(uuid(7)) @db.Uuid
+  name          String        @unique
+  audience      AgentAudience @default(CLIENTS)
+  /// How this agent should work, added to the built-in rules for its audience
+  instructions  String        @default("")
+  model         String        @default("claude-sonnet-5-5")
+  enabled       Boolean       @default(true)
+  employeeId    String        @unique @db.Uuid
+  employee      Employee      @relation(fields: [employeeId], references: [id])
+  /// Its agent bot in Chatwoot, created once the inbox is connected
+  chatwootBotId Int?          @unique
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
 }
 
 /// A link a client opens, without signing in, to upload the documents their case needs.

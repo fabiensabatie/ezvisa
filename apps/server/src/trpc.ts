@@ -1,5 +1,6 @@
 import {
   type Actor,
+  type ChatConnection,
   type Context,
   type ErrorCode,
   isDomainError,
@@ -23,6 +24,8 @@ export type TrpcContext = {
   ip: string;
   /** The dashboard's public address, for links sent to clients. */
   appUrl: string | null;
+  /** The shared inbox (Chatwoot), when connected. */
+  chat: ChatConnection | null;
 };
 
 const t = initTRPC.context<TrpcContext>().create();
@@ -65,6 +68,7 @@ export const protectedProcedure = publicProcedure.use(({ ctx, next }) => {
     push: ctx.push,
     now: ctx.now,
     appUrl: ctx.appUrl,
+    chat: ctx.chat,
   };
   return next({ ctx: { domain } });
 });

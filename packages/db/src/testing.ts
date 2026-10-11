@@ -28,6 +28,8 @@ export const ALL_TABLES = [
   "TemplateFile",
   "TemplateVersion",
   "Template",
+  "Agent",
+  "ChatContact",
   "Client",
   "Session",
   "OAuthAccessToken",

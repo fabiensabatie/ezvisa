@@ -1,5 +1,8 @@
 import { fileURLToPath } from "node:url";
 import {
+  ChatAgents,
+  chatFromEnv,
+  chatModelsFromEnv,
   LocalDiskStorage,
   loadRootEnv,
   S3Storage,
@@ -9,6 +12,7 @@ import {
   WebPushSender,
 } from "@ezvisa/core";
 import { createDb } from "@ezvisa/db";
+import { mcpToolbox } from "@ezvisa/mcp";
 import { createApp } from "./app.js";
 
 loadRootEnv();
@@ -80,6 +84,30 @@ if (!publicUrl) {
 // Web Push keys are generated on first use and kept in the database.
 const push = new WebPushSender(db, vapidSubject(publicUrl));
 
+// The shared inbox and its agents. Both need Chatwoot; answering needs a public URL too.
+const chat = chatFromEnv();
+const agents =
+  chat && publicUrl
+    ? new ChatAgents({
+        db,
+        chat,
+        model: chatModelsFromEnv(),
+        toolbox: mcpToolbox(),
+        storage,
+        push,
+        appUrl: publicUrl,
+      })
+    : null;
+console.log(
+  JSON.stringify({
+    level: "info",
+    msg: "shared inbox",
+    chatwoot: chat?.publicUrl ?? null,
+    agents: Boolean(agents),
+    model: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
+  }),
+);
+
 const app = createApp({
   db,
   version,
@@ -87,6 +115,8 @@ const app = createApp({
   push,
   uploadOrigins,
   publicUrl,
+  chat,
+  agents,
   webDir: production ? webDir : undefined,
 });
 

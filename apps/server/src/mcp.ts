@@ -1,6 +1,7 @@
 import {
   authenticateBearer,
   bearerToken,
+  type ChatConnection,
   type Context,
   hashToken,
   type Storage,
@@ -22,6 +23,8 @@ export type McpRouteOptions = {
   resourceMetadataUrl?: string;
   /** The dashboard's public address, for links tools hand out (client upload links). */
   appUrl?: string;
+  /** The shared inbox, for the conversation tools. */
+  chat?: ChatConnection | null;
 };
 
 function jsonRpcError(res: Response, status: number, code: number, message: string) {
@@ -57,6 +60,7 @@ export function mcpRouter(options: McpRouteOptions): Router {
         storage: options.storage,
         now,
         appUrl: options.appUrl ?? null,
+        chat: options.chat ?? null,
       };
     } catch {
       const challenge = ['Bearer realm="ezvisa"'];

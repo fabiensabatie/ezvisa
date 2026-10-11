@@ -13,7 +13,16 @@ import { type Outputs, useTRPC } from "../trpc";
 type Me = Outputs["me"];
 type Counts = Outputs["navCounts"];
 type NavItem = {
-  to: "/" | "/cases" | "/clients" | "/reminders" | "/team" | "/templates" | "/settings";
+  to:
+    | "/"
+    | "/inbox"
+    | "/cases"
+    | "/clients"
+    | "/reminders"
+    | "/agents"
+    | "/team"
+    | "/templates"
+    | "/settings";
   label: string;
   icon: IconName;
   count?: number | null;
@@ -24,6 +33,13 @@ function navItems(me: Me, counts: Counts | undefined): NavItem[] {
   const p = me.permissions;
   return [
     { to: "/", label: "Overview", icon: "home", visible: p.cases !== "none" },
+    {
+      to: "/inbox",
+      label: "Inbox",
+      icon: "message",
+      count: counts?.inbox,
+      visible: p.clients !== "none",
+    },
     {
       to: "/cases",
       label: "Cases",
@@ -45,6 +61,7 @@ function navItems(me: Me, counts: Counts | undefined): NavItem[] {
       count: counts?.remindersDue,
       visible: p.reminders !== "none",
     },
+    { to: "/agents", label: "Agents", icon: "sparkle", visible: p.settings !== "none" },
     { to: "/team", label: "Team & roles", icon: "badge", visible: p.team !== "none" },
     {
       to: "/templates",

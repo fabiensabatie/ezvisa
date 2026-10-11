@@ -1,6 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { Link, useParams } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
+import { ClientChatCard } from "../components/ClientChatCard";
 import { ClientDialog } from "../components/ClientDialog";
 import { Button } from "../components/controls";
 import { DocumentList, FileDrop, useDocumentUpload } from "../components/DocumentList";
@@ -193,6 +194,7 @@ export function ClientDetailPage() {
               )}
             </Card>
 
+            <ClientChatCard clientId={c.id} name={c.fullName} />
             <Documents c={c} />
           </div>
         )}

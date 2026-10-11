@@ -123,6 +123,22 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
     },
   },
   {
+    name: "Client agent",
+    description:
+      "For chat agents answering clients: reads the identified client's cases and documents and shares their upload link.",
+    permissions: {
+      clients: "view",
+      cases: "edit",
+      documents: "view",
+      templates: "view",
+      reminders: "none",
+      team: "none",
+      settings: "none",
+      approvePacks: false,
+      markSubmitted: false,
+    },
+  },
+  {
     name: "Assistant (MCP)",
     description: "An AI assistant connected through MCP. Drafts and flags, never approves.",
     permissions: {
@@ -138,3 +154,19 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
     },
   },
 ];
+
+/** What both may do: the lower level on each resource, and a flag only if both have it. */
+export function intersectPermissions(a: Permissions, b: Permissions): Permissions {
+  const lower = (x: Level, y: Level) => (LEVELS.indexOf(x) <= LEVELS.indexOf(y) ? x : y);
+  return {
+    clients: lower(a.clients, b.clients),
+    cases: lower(a.cases, b.cases),
+    documents: lower(a.documents, b.documents),
+    templates: lower(a.templates, b.templates),
+    reminders: lower(a.reminders, b.reminders),
+    team: lower(a.team, b.team),
+    settings: lower(a.settings, b.settings),
+    approvePacks: a.approvePacks && b.approvePacks,
+    markSubmitted: a.markSubmitted && b.markSubmitted,
+  };
+}
