@@ -20,6 +20,7 @@ export const ALL_TABLES = [
   "Reminder",
   "ReminderRule",
   "Setting",
+  "UsefulLink",
   "Document",
   "CaseItem",
   "CaseForm",

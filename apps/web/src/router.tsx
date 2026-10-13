@@ -7,6 +7,7 @@ import { ClientDetailPage } from "./pages/ClientDetail";
 import { ClientsPage } from "./pages/Clients";
 import { ClientUploadPage } from "./pages/ClientUpload";
 import { InboxPage } from "./pages/Inbox";
+import { LinksPage } from "./pages/Links";
 import { LoginPage } from "./pages/Login";
 import { OverviewPage } from "./pages/Overview";
 import { RemindersPage } from "./pages/Reminders";
@@ -71,6 +72,7 @@ export const routeTree = rootRoute.addChildren([
     }),
     createRoute({ getParentRoute: parent, path: "/agents", component: AgentsPage }),
     createRoute({ getParentRoute: parent, path: "/reminders", component: RemindersPage }),
+    createRoute({ getParentRoute: parent, path: "/links", component: LinksPage }),
     createRoute({ getParentRoute: parent, path: "/team", component: TeamPage }),
     createRoute({ getParentRoute: parent, path: "/templates", component: TemplatesPage }),
     createRoute({

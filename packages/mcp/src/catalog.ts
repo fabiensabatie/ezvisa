@@ -3,6 +3,7 @@ import { chatTools } from "./tools/chat.js";
 import { clientTools, sessionTools } from "./tools/clients.js";
 import { documentTools } from "./tools/documents.js";
 import { formTools } from "./tools/forms.js";
+import { linkTools } from "./tools/links.js";
 import { reminderTools } from "./tools/reminders.js";
 import { teamTools } from "./tools/team.js";
 import { templateTools } from "./tools/templates.js";
@@ -29,5 +30,6 @@ export const ALL_TOOLS = [
   ...formTools,
   ...templateTools,
   ...reminderTools,
+  ...linkTools,
   ...teamTools,
 ];

@@ -550,3 +550,41 @@ model CaseForm {
 
   @@unique([caseId, templateFileId])
 }
+
+enum LinkCategory {
+  IMMIGRATION
+  WORK_PERMITS
+  DOCUMENTS
+  INSURANCE_MONEY
+  OTHER
+}
+
+/// Who uses a useful link: the team, the client themselves, or both
+enum LinkAudience {
+  TEAM
+  CLIENT
+  BOTH
+}
+
+/// A website the team uses often, such as the Thai e-Visa portal. Shared by the whole agency.
+model UsefulLink {
+  id          String       @id @default(uuid(7)) @db.Uuid
+  name        String
+  url         String
+  category    LinkCategory
+  /// When to use it, for new staff
+  note        String?
+  audience    LinkAudience @default(TEAM)
+  /// The site needs the agency's login
+  needsLogin  Boolean      @default(false)
+  /// Shown at the top for the whole team
+  pinned      Boolean      @default(false)
+  /// Last time someone confirmed the page still works
+  checkedAt   DateTime?
+  checkedById String?      @db.Uuid
+  createdById String?      @db.Uuid
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([category, name])
+}

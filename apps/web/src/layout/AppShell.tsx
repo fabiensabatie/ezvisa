@@ -19,6 +19,7 @@ type NavItem = {
     | "/cases"
     | "/clients"
     | "/reminders"
+    | "/links"
     | "/agents"
     | "/team"
     | "/templates"
@@ -61,6 +62,7 @@ function navItems(me: Me, counts: Counts | undefined): NavItem[] {
       count: counts?.remindersDue,
       visible: p.reminders !== "none",
     },
+    { to: "/links", label: "Useful links", icon: "link", visible: p.links !== "none" },
     { to: "/agents", label: "Agents", icon: "sparkle", visible: p.settings !== "none" },
     { to: "/team", label: "Team & roles", icon: "badge", visible: p.team !== "none" },
     {

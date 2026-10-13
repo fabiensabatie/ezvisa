@@ -94,6 +94,7 @@ export {
   MAX_UPLOAD_BYTES,
 } from "./services/files.js";
 export * as forms from "./services/forms.js";
+export * as links from "./services/links.js";
 export * as notifications from "./services/notifications.js";
 export {
   type PushMessage,

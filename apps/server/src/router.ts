@@ -6,6 +6,7 @@ import {
   dashboard,
   documents,
   forms,
+  links,
   notifications,
   reminders,
   settings,
@@ -225,6 +226,25 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(agents.agentRefInput)
       .mutation(({ ctx, input }) => agents.deleteAgent(ctx.domain, input)),
+  }),
+
+  /** Websites the team uses often, shared by the whole agency. Only people change them. */
+  links: router({
+    list: protectedProcedure
+      .input(links.listLinksInput)
+      .query(({ ctx, input }) => links.listLinks(ctx.domain, input)),
+    create: protectedProcedure
+      .input(links.createLinkInput)
+      .mutation(({ ctx, input }) => links.createLink(ctx.domain, input)),
+    update: protectedProcedure
+      .input(links.updateLinkInput)
+      .mutation(({ ctx, input }) => links.updateLink(ctx.domain, input)),
+    markChecked: protectedProcedure
+      .input(links.linkRefInput)
+      .mutation(({ ctx, input }) => links.markLinkChecked(ctx.domain, input)),
+    delete: protectedProcedure
+      .input(links.linkRefInput)
+      .mutation(({ ctx, input }) => links.deleteLink(ctx.domain, input)),
   }),
 
   notifications: router({

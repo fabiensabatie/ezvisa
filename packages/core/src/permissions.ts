@@ -11,6 +11,7 @@ export const RESOURCES = [
   "reminders",
   "team",
   "settings",
+  "links",
 ] as const;
 export type Resource = (typeof RESOURCES)[number];
 
@@ -24,6 +25,8 @@ export const permissionsSchema = z.object({
   reminders: levelSchema,
   team: levelSchema,
   settings: levelSchema,
+  /** Useful links: view to read, edit to add and change, full to delete. Never agents' to change. */
+  links: levelSchema,
   /** Move a case to SUBMISSION. Humans only, enforced separately. */
   approvePacks: z.boolean(),
   /** Move a case from SUBMISSION to DONE and record the outcome. */
@@ -50,6 +53,7 @@ export const NO_PERMISSIONS: Permissions = {
   reminders: "none",
   team: "none",
   settings: "none",
+  links: "none",
   approvePacks: false,
   markSubmitted: false,
 };
@@ -73,6 +77,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       reminders: "full",
       team: "full",
       settings: "full",
+      links: "full",
       approvePacks: true,
       markSubmitted: true,
     },
@@ -88,6 +93,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       reminders: "edit",
       team: "view",
       settings: "view",
+      links: "full",
       approvePacks: true,
       markSubmitted: true,
     },
@@ -103,6 +109,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       reminders: "edit",
       team: "none",
       settings: "none",
+      links: "edit",
       approvePacks: true,
       markSubmitted: false,
     },
@@ -118,6 +125,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       reminders: "view",
       team: "none",
       settings: "none",
+      links: "edit",
       approvePacks: false,
       markSubmitted: true,
     },
@@ -134,6 +142,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       reminders: "none",
       team: "none",
       settings: "none",
+      links: "none",
       approvePacks: false,
       markSubmitted: false,
     },
@@ -149,6 +158,7 @@ export const ROLE_PRESETS: readonly RolePreset[] = [
       reminders: "view",
       team: "none",
       settings: "none",
+      links: "view",
       approvePacks: false,
       markSubmitted: false,
     },
@@ -166,6 +176,7 @@ export function intersectPermissions(a: Permissions, b: Permissions): Permission
     reminders: lower(a.reminders, b.reminders),
     team: lower(a.team, b.team),
     settings: lower(a.settings, b.settings),
+    links: lower(a.links, b.links),
     approvePacks: a.approvePacks && b.approvePacks,
     markSubmitted: a.markSubmitted && b.markSubmitted,
   };

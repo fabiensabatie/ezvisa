@@ -29,6 +29,7 @@ const COLUMNS: Array<{ key: keyof Role["permissions"]; label: string }> = [
   { key: "templates", label: "Templates" },
   { key: "reminders", label: "Reminders" },
   { key: "team", label: "Team" },
+  { key: "links", label: "Useful links" },
   { key: "approvePacks", label: "Approve packs" },
   { key: "markSubmitted", label: "Record outcomes" },
 ];
