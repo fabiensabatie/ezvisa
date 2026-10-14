@@ -308,6 +308,8 @@ model TemplateItem {
   formFile     TemplateFile?   @relation(fields: [formFileId], references: [id])
   /// The client can upload this item through the case's shared checklist link
   clientUpload Boolean         @default(false)
+  /// The item of the previous version this one was copied from; null when added in this version
+  originId     String?         @db.Uuid
 
   @@index([versionId])
 }
@@ -326,6 +328,8 @@ model TemplateFile {
   fieldMap    Json?
   /// For a flat PDF EzVisa made fillable: its copy with the added fields
   fillableKey String?
+  /// The file of the previous version this one was copied from; null when added in this version
+  originId    String?         @db.Uuid
   items       TemplateItem[]
   caseForms   CaseForm[]
 

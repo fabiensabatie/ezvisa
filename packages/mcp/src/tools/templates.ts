@@ -3,7 +3,7 @@ import { canAdminister, canEdit, canView, defineTool, type RawResult } from "../
 import { fileContent } from "./file-content.js";
 
 const DRAFT_NOTE =
-  "Changes go to the template's draft, which is created from the published version on the first change. Open cases are never affected; publish_template_version makes the draft apply to new cases.";
+  "Changes go to the template's draft, which is created from the published version on the first change. Cases are not affected until publish_template_version makes the draft apply to new cases and every open case.";
 
 export const templateTools = [
   defineTool({
@@ -148,7 +148,7 @@ export const templateTools = [
     name: "publish_template_version",
     title: "Publish the draft",
     description:
-      "Publishes the draft so new cases use it, and retires the previous version. Confirm with a person before publishing.",
+      "Publishes the draft so new cases use it, moves every open case of the template onto it (kept items keep their status and documents, new items start MISSING, removed items go), and retires the previous version. Confirm with a person before publishing.",
     input: templates.publishTemplateVersionInput,
     visibleTo: canEdit("templates"),
     run: (ctx, input) => templates.publishTemplateVersion(ctx, input),

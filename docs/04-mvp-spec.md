@@ -496,7 +496,7 @@ model AuditLog {
 
 These live in `core` and are covered by tests.
 
-1. **Opening a case copies the template.** `create_case` copies every item of the template's latest PUBLISHED version into `CaseItem` rows. Later template edits never change open cases.
+1. **Opening a case copies the template.** `create_case` copies every item of the template's latest PUBLISHED version into `CaseItem` rows. Publishing a new version brings every open case of the template onto it: items it keeps hold their status, note and documents and take the new label, order and settings; new items start `MISSING`; removed items go, and their documents stay on the case. Each item and file records the one it was copied from (`originId`) so renamed items still match. Closed cases keep their version.
 2. **Only humans verify.** Setting a case item to `VERIFIED` requires a `HUMAN` actor. An assistant can set `RECEIVED` or `FLAGGED`, and a flag needs a note.
 3. **Stage guards.**
    - Moving to `VALIDATION` requires every required item to be `RECEIVED`, `VERIFIED` or `WAIVED`.

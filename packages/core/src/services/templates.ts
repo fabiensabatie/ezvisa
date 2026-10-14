@@ -211,6 +211,7 @@ async function ensureDraft(tx: Tx, ctx: Context, template: LoadedTemplate) {
         sizeBytes: file.sizeBytes,
         fieldMap: (file.fieldMap ?? undefined) as Prisma.InputJsonValue | undefined,
         fillableKey: file.fillableKey,
+        originId: file.id,
       },
     });
     fileIds.set(file.id, copy.id);
@@ -229,6 +230,7 @@ async function ensureDraft(tx: Tx, ctx: Context, template: LoadedTemplate) {
         rules: (item.rules ?? undefined) as Prisma.InputJsonValue | undefined,
         formFileId: item.formFileId ? (fileIds.get(item.formFileId) ?? null) : null,
         clientUpload: item.clientUpload,
+        originId: item.id,
       },
     });
     itemIds.set(item.id, copy.id);
@@ -754,45 +756,163 @@ export async function removeTemplateFile(
   return result.dto;
 }
 
+/**
+ * Maps every earlier id to its copy among `current`, following each row's originId back
+ * through the versions it was copied from.
+ */
+function copiesOf(
+  current: Array<{ id: string; originId: string | null }>,
+  originOf: Map<string, string | null>,
+) {
+  const copies = new Map<string, string>();
+  for (const row of current) {
+    let origin = row.originId;
+    while (origin && !copies.has(origin)) {
+      copies.set(origin, row.id);
+      origin = originOf.get(origin) ?? null;
+    }
+  }
+  return copies;
+}
+
+/**
+ * Moves every open case of the template onto the version just published, so each checklist
+ * follows the template. Kept items keep their status, note and documents and take the new
+ * label, order and settings; new items start MISSING; removed items go, and their documents
+ * stay on the case. Case forms follow their file to its copy.
+ */
+async function syncOpenCases(tx: Tx, ctx: Context, templateId: string, versionId: string) {
+  const versions = await tx.templateVersion.findMany({
+    where: { templateId },
+    include: { items: { orderBy: { position: "asc" } }, files: true },
+  });
+  const current = versions.find((v) => v.id === versionId);
+  if (!current) return 0;
+  const itemCopies = copiesOf(
+    current.items,
+    new Map(versions.flatMap((v) => v.items).map((i) => [i.id, i.originId])),
+  );
+  const fileCopies = copiesOf(
+    current.files,
+    new Map(versions.flatMap((v) => v.files).map((f) => [f.id, f.originId])),
+  );
+
+  const cases = await tx.case.findMany({
+    where: {
+      templateVersion: { templateId },
+      templateVersionId: { not: versionId },
+      stage: { notIn: ["DONE", "CANCELLED"] },
+    },
+    include: { templateVersion: true, items: { orderBy: { position: "asc" } }, forms: true },
+  });
+  for (const kase of cases) {
+    const kept = new Map<string, (typeof kase.items)[number]>();
+    const removed: typeof kase.items = [];
+    const own: typeof kase.items = [];
+    for (const item of kase.items) {
+      const copy = item.templateItemId ? itemCopies.get(item.templateItemId) : undefined;
+      if (copy && !kept.has(copy)) kept.set(copy, item);
+      else if (item.templateItemId) removed.push(item);
+      else own.push(item);
+    }
+
+    const added: string[] = [];
+    for (const [index, templateItem] of current.items.entries()) {
+      const data = {
+        templateItemId: templateItem.id,
+        position: index + 1,
+        label: templateItem.label,
+        kind: templateItem.kind,
+        required: templateItem.required,
+        clientUpload: templateItem.clientUpload,
+      };
+      const item = kept.get(templateItem.id);
+      if (item) {
+        await tx.caseItem.update({ where: { id: item.id }, data });
+      } else {
+        await tx.caseItem.create({ data: { ...data, caseId: kase.id } });
+        added.push(templateItem.label);
+      }
+    }
+    for (const [index, item] of own.entries()) {
+      await tx.caseItem.update({
+        where: { id: item.id },
+        data: { position: current.items.length + index + 1 },
+      });
+    }
+    if (removed.length) {
+      const ids = removed.map((i) => i.id);
+      await tx.document.updateMany({
+        where: { caseItemId: { in: ids } },
+        data: { caseItemId: null },
+      });
+      await tx.caseItem.deleteMany({ where: { id: { in: ids } } });
+    }
+    for (const form of kase.forms) {
+      const copy = fileCopies.get(form.templateFileId);
+      if (copy)
+        await tx.caseForm.update({ where: { id: form.id }, data: { templateFileId: copy } });
+    }
+    await tx.case.update({ where: { id: kase.id }, data: { templateVersionId: versionId } });
+    await audit(tx, ctx, {
+      action: "case.template_updated",
+      entity: "Case",
+      entityId: kase.id,
+      before: { version: kase.templateVersion.version },
+      after: {
+        version: current.version,
+        added,
+        removed: removed.map((i) => i.label),
+      },
+    });
+  }
+  return cases.length;
+}
+
 export async function publishTemplateVersion(
   ctx: Context,
   raw: z.input<typeof publishTemplateVersionInput>,
 ) {
   requireLevel(ctx, "templates", "edit");
   const { template: ref, notes } = publishTemplateVersionInput.parse(raw);
-  return ctx.db.$transaction(async (tx) => {
-    const template = await loadTemplate(tx, ref);
-    const draft = template.versions.find((v) => v.status === "DRAFT");
-    if (!draft) throw new DomainError("CONFLICT", `${template.name} has no draft to publish.`);
-    if (draft.items.length === 0) {
-      throw new DomainError("GUARD_FAILED", "A template needs at least one checklist item.");
-    }
-    await tx.templateVersion.updateMany({
-      where: { templateId: template.id, status: "PUBLISHED" },
-      data: { status: "RETIRED" },
-    });
-    await tx.templateVersion.update({
-      where: { id: draft.id },
-      data: {
-        status: "PUBLISHED",
-        publishedAt: ctx.now(),
-        publishedById: ctx.actor.employeeId,
-        notes: notes ?? draft.notes,
-      },
-    });
-    await audit(tx, ctx, {
-      action: "template.published",
-      entity: "Template",
-      entityId: template.id,
-      after: { version: draft.version, notes },
-    });
-    const updated = await loadTemplate(tx, template.id);
-    const published = updated.versions.find((v) => v.status === "PUBLISHED");
-    return {
-      ...templateSummaryDto(updated),
-      published: published ? templateVersionDto(published) : null,
-    };
-  });
+  return ctx.db.$transaction(
+    async (tx) => {
+      const template = await loadTemplate(tx, ref);
+      const draft = template.versions.find((v) => v.status === "DRAFT");
+      if (!draft) throw new DomainError("CONFLICT", `${template.name} has no draft to publish.`);
+      if (draft.items.length === 0) {
+        throw new DomainError("GUARD_FAILED", "A template needs at least one checklist item.");
+      }
+      await tx.templateVersion.updateMany({
+        where: { templateId: template.id, status: "PUBLISHED" },
+        data: { status: "RETIRED" },
+      });
+      await tx.templateVersion.update({
+        where: { id: draft.id },
+        data: {
+          status: "PUBLISHED",
+          publishedAt: ctx.now(),
+          publishedById: ctx.actor.employeeId,
+          notes: notes ?? draft.notes,
+        },
+      });
+      await audit(tx, ctx, {
+        action: "template.published",
+        entity: "Template",
+        entityId: template.id,
+        after: { version: draft.version, notes },
+      });
+      const casesUpdated = await syncOpenCases(tx, ctx, template.id, draft.id);
+      const updated = await loadTemplate(tx, template.id);
+      const published = updated.versions.find((v) => v.status === "PUBLISHED");
+      return {
+        ...templateSummaryDto(updated),
+        published: published ? templateVersionDto(published) : null,
+        casesUpdated,
+      };
+    },
+    { timeout: 60_000 },
+  );
 }
 
 /** Throws the draft away. The published version stays current. */

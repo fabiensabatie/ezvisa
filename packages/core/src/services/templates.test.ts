@@ -9,8 +9,9 @@ import {
   resetDatabase,
   testDatabaseUrl,
 } from "../testing.js";
-import { createCase, getCase } from "./cases.js";
+import { closeCase, createCase, getCase, updateCaseItem } from "./cases.js";
 import { createClient } from "./clients.js";
+import { uploadDocument } from "./documents.js";
 import {
   addTemplateItem,
   attachTemplateFile,
@@ -23,7 +24,9 @@ import {
   publishTemplateVersion,
   readTemplateFile,
   removeTemplateFile,
+  removeTemplateItem,
   reorderTemplateItems,
+  updateTemplate,
   updateTemplateItem,
 } from "./templates.js";
 
@@ -54,7 +57,7 @@ describe.skipIf(!url)("templates service", () => {
     });
   });
 
-  it("edits a draft copied from the published version without touching open cases", async () => {
+  it("edits a draft copied from the published version, then brings open cases onto it", async () => {
     const v1 = await publishSampleTemplate(owner);
     expect(v1.publishedVersion).toBe(1);
     const client = await createClient(owner, { fullName: "Margaret", nationality: "GB" });
@@ -91,12 +94,83 @@ describe.skipIf(!url)("templates service", () => {
       "Map to the residence",
     ]);
 
-    const unchanged = await getCase(owner, { case: openCase.number });
-    expect(unchanged.items).toHaveLength(4);
-    expect(unchanged.template.version).toBe(1);
+    expect(published.casesUpdated).toBe(1);
+    const updated = await getCase(owner, { case: openCase.number });
+    expect(updated.template.version).toBe(2);
+    expect(updated.items.map((i) => i.label)).toEqual(
+      published.published?.items.map((i) => i.label),
+    );
+    // The renamed item is the same item: its id stays, and it now points at the v2 item.
+    expect(updated.items[3]?.id).toBe(openCase.items[2]?.id);
 
     const v1Now = await getTemplate(owner, { template: "retirement-extension", version: 1 });
     expect(v1Now.selected.status).toBe("RETIRED");
+  });
+
+  it("keeps an open case's progress on publish, and drops the items the template removed", async () => {
+    const v1 = await publishSampleTemplate(owner);
+    const client = await createClient(owner, {
+      fullName: "Akira Sato",
+      nationality: "JP",
+      consentGiven: true,
+    });
+    const kase = await createCase(owner, { clientId: client.id, template: "retirement-extension" });
+    const [passport, bank, photos] = kase.items;
+    await updateCaseItem(owner, {
+      case: kase.number,
+      itemId: photos?.id ?? "",
+      status: "FLAGGED",
+      note: "photo background is grey",
+    });
+    const scan = await uploadDocument(owner, {
+      clientId: client.id,
+      filename: "bank.pdf",
+      mimeType: "application/pdf",
+      contentBase64: Buffer.from("%PDF-1.7 bank").toString("base64"),
+      case: kase.number,
+      caseItemId: bank?.id,
+    });
+    const closed = await createCase(owner, {
+      clientId: client.id,
+      template: "retirement-extension",
+    });
+    await closeCase(owner, { case: closed.number, outcome: "WITHDRAWN", note: "Client left" });
+
+    // v2 drops the bank letter, stops asking the client for the passport and adds an item.
+    const [v1Passport, v1Bank] = v1.published?.items ?? [];
+    await updateTemplateItem(owner, {
+      template: "retirement-extension",
+      itemId: v1Passport?.id ?? "",
+      clientUpload: false,
+    });
+    const draft = await getTemplate(owner, { template: "retirement-extension", version: "draft" });
+    const draftBank = draft.selected.items.find((i) => i.label === v1Bank?.label);
+    await removeTemplateItem(owner, {
+      template: "retirement-extension",
+      itemId: draftBank?.id ?? "",
+    });
+    await addTemplateItem(owner, { template: "retirement-extension", label: "TM.30 receipt" });
+    // v3 changes nothing for the case, so the lineage runs through two versions.
+    await publishTemplateVersion(owner, { template: "retirement-extension" });
+    await updateTemplate(owner, { template: "retirement-extension", notes: "Wording" });
+    await publishTemplateVersion(owner, { template: "retirement-extension" });
+
+    const now = await getCase(owner, { case: kase.number });
+    expect(now.template.version).toBe(3);
+    expect(now.items.map((i) => [i.label, i.status, i.clientUpload])).toEqual([
+      ["Passport with all stamped pages", "MISSING", false],
+      ["Two photos, 4 × 6 cm", "FLAGGED", true],
+      ["Map to the residence", "MISSING", true],
+      ["TM.30 receipt", "MISSING", true],
+    ]);
+    expect(now.items[0]?.id).toBe(passport?.id);
+    expect(now.items[1]).toMatchObject({ id: photos?.id, note: "photo background is grey" });
+    // The bank letter's document stays on the case, no longer behind an item.
+    expect(now.documents.map((d) => d.id)).toEqual([scan.id]);
+
+    const untouched = await getCase(owner, { case: closed.number });
+    expect(untouched.template.version).toBe(1);
+    expect(untouched.items).toHaveLength(4);
   });
 
   it("reorders draft items and rejects incomplete orders", async () => {

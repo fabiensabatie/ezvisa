@@ -282,7 +282,7 @@ function ItemDialog({
       open
       onClose={onClose}
       title={item ? "Edit checklist item" : "Add a checklist item"}
-      description="Open cases keep their own copy. This changes cases opened after you publish."
+      description="This changes the draft. Publishing applies it to new cases and to every open case."
       submitLabel={item ? "Save" : "Add item"}
       pending={mutation.isPending}
       error={mutation.error ? errorMessage(mutation.error) : null}
@@ -458,7 +458,7 @@ function PublishDialog({
       open
       onClose={onClose}
       title={`Publish version ${t.selected.version}`}
-      description="New cases will use it. Open cases keep the version they started with."
+      description="New cases and every open case will follow it. Items an open case already has keep their status and documents."
       submitLabel="Publish"
       pending={publish.isPending}
       error={publish.error ? errorMessage(publish.error) : null}
@@ -467,7 +467,11 @@ function PublishDialog({
           .mutateAsync({ template: t.slug, ...(notes.trim() ? { notes: notes.trim() } : {}) })
           .catch(() => null);
         if (done) {
-          toast.success(`${t.name} v${t.selected.version} is live`);
+          toast.success(
+            done.casesUpdated
+              ? `${t.name} v${t.selected.version} is live · ${plural(done.casesUpdated, "open case")} updated`
+              : `${t.name} v${t.selected.version} is live`,
+          );
           onClose();
           onPublished();
         }
@@ -715,7 +719,7 @@ function DraftBanner({ t, onDone }: { t: Template; onDone: () => void }) {
         <div className="text-sm text-text-soft">
           {firstVersion
             ? "Publish it to open cases with this template."
-            : `New cases keep using v${t.publishedVersion} until you publish this draft.`}
+            : `Cases keep using v${t.publishedVersion} until you publish this draft.`}
         </div>
       </div>
       {!firstVersion && (
