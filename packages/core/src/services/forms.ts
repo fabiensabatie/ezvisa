@@ -6,7 +6,8 @@ import { type Context, requireHuman, requireLevel, requireStorage } from "../con
 import { bangkokToday, formatDateOnly } from "../dates.js";
 import { DomainError } from "../errors.js";
 import { canRead } from "../forms/ai.js";
-import { placeBlank, readTextLayer } from "../forms/layout.js";
+import { placeBlank, readTextLayer, type TextPage } from "../forms/layout.js";
+import { readScanLines } from "../forms/lines.js";
 import { addFields, type FillValue, fillPdf, inspectPdf, type PdfField } from "../forms/pdf.js";
 import {
   FORMATS,
@@ -86,6 +87,17 @@ function fieldName(label: string, index: number, taken: Set<string>): string {
 
 // ---- template forms: making them fillable -----------------------------------------------------
 
+/** What blanks can be anchored to on each page: printed text, or a scan's writing lines. */
+async function readLayout(bytes: Uint8Array): Promise<TextPage[]> {
+  const text = await readTextLayer(bytes).catch((): TextPage[] => []);
+  // A page with almost no text is a scan, even inside a PDF with typed pages.
+  if (text.length > 0 && text.every((p) => p.items.length >= 3)) return text;
+  const scan = await readScanLines(bytes).catch((): TextPage[] => []);
+  return (scan.length ? scan : text).map((page, index) =>
+    (text[index]?.items.length ?? 0) >= 3 ? (text[index] as TextPage) : page,
+  );
+}
+
 export const templateFormInput = z.object({
   fileId: id("Template file"),
   case: caseRef.optional().describe("Open it as part of this case: needs case access instead"),
@@ -155,8 +167,9 @@ export async function analyzeTemplateForm(
         `${file.name} has no form fields. Making it fillable needs Claude: set ANTHROPIC_API_KEY on the server.`,
       );
     }
-    // A scan has no text layer; the boxes then come from Claude's estimate alone.
-    const text = await readTextLayer(original).catch(() => []);
+    // A scan has no text layer: its pages are read for writing lines instead. Without either,
+    // the boxes come from Claude's estimate alone.
+    const text = await readLayout(original);
     const located = await ctx.forms.locateFields(original, text);
     if (located.length === 0) {
       throw new DomainError("CONFLICT", `No blanks were found on ${file.name}.`);

@@ -20,6 +20,11 @@ export type TextPage = {
   items: TextItem[];
   /** Where the printed text ends on the right: blanks to the end of a line stop here */
   right: number;
+  /**
+   * On a scan: a picture of the page (PNG) with each writing line numbered in red. Its items
+   * are then the lines found in the image, not printed text.
+   */
+  image?: Uint8Array;
 };
 
 /** Which printed text a blank belongs to. */
@@ -164,7 +169,7 @@ export function describeTextLayer(pages: TextPage[]): string {
   return pages
     .map(
       (page, index) =>
-        `Page ${index + 1} (${Math.round(page.width)} x ${Math.round(page.height)} points, y from the bottom):\n` +
+        `Page ${index + 1} (${Math.round(page.width)} x ${Math.round(page.height)} points, y from the bottom${page.image ? "; a scan: the items are the writing lines numbered on its picture" : ""}):\n` +
         page.items
           .map(
             (i) =>

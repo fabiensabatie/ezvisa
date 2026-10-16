@@ -178,18 +178,38 @@ export class ClaudeFormAi implements FormAi {
   }
 
   async locateFields(pdf: Uint8Array, text: TextPage[]): Promise<LocatedField[]> {
+    // Scanned pages come as pictures with their writing lines numbered.
+    const pictures: Anthropic.Beta.BetaContentBlockParam[] = text.flatMap((page, index) =>
+      page.image
+        ? [
+            { type: "text" as const, text: `Page ${index + 1}, with its writing lines numbered:` },
+            {
+              type: "image" as const,
+              source: {
+                type: "base64" as const,
+                media_type: "image/png" as const,
+                data: Buffer.from(page.image).toString("base64"),
+              },
+            },
+          ]
+        : [],
+    );
+    const scanned = pictures.length
+      ? " On a scanned page there is no printed text: its items are the writing lines found in the image, each marked on the page's picture with a red #number at its left end. Anchor a blank written on such a line on it (on), by its number; leave the anchor null for a tick box or a space without a line."
+      : "";
     const printed = text.some((p) => p.items.length > 0)
       ? `
 
 The text printed on the form, one item per line with its #id and position in PDF points:
 ${describeTextLayer(text)}
 
-For each blank, give its anchor: the item it belongs to. Most blanks follow their label on the same line (after), up to the next label on that line (until) or to the end of the line. When the label and its blank are printed together as dots or underscores, anchor on the dots. For a tick box, anchor before its option's text, or on the box glyph if one is printed. Bilingual forms print a Thai label and an English one below it: anchor to the label on the blank's own line.`
+For each blank, give its anchor: the item it belongs to. Most blanks follow their label on the same line (after), up to the next label on that line (until) or to the end of the line. When the label and its blank are printed together as dots or underscores, anchor on the dots. For a tick box, anchor before its option's text, or on the box glyph if one is printed. Bilingual forms print a Thai label and an English one below it: anchor to the label on the blank's own line.${scanned}`
       : "";
     const answer = await this.ask(
       located,
       [
         ClaudeFormAi.pdf(pdf),
+        ...pictures,
         {
           type: "text",
           text: `This is a blank form. List every place where the applicant or the agency writes something or ticks a box: one entry per blank line, box or cell, including signature and date lines, but not sections for official use only. Give the writing space only, not the printed label, as fractions of the page measured from its top-left corner.${printed}`,

@@ -1,5 +1,5 @@
 import { createDb, type Db } from "@ezvisa/db";
-import { PDFDocument, StandardFonts } from "pdf-lib";
+import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Context } from "../context.js";
 import { FakeFormAi } from "../forms/fakes.js";
@@ -52,6 +52,21 @@ async function flatForm(): Promise<Uint8Array> {
   const page = doc.addPage([595, 842]);
   page.drawText("Family name ....................", { x: 50, y: 740, size: 11, font });
   page.drawText("Signature ......................", { x: 50, y: 200, size: 11, font });
+  return doc.save();
+}
+
+/** A scanned form: writing lines in the image, no text layer. */
+async function scannedForm(): Promise<Uint8Array> {
+  const doc = await PDFDocument.create();
+  const page = doc.addPage([595, 842]);
+  page.drawLine({
+    start: { x: 150, y: 700 },
+    end: { x: 400, y: 700 },
+    thickness: 1,
+    dashArray: [1, 3],
+    color: rgb(0, 0, 0),
+  });
+  page.drawLine({ start: { x: 300, y: 200 }, end: { x: 500, y: 200 }, thickness: 0.8 });
   return doc.save();
 }
 
@@ -376,6 +391,40 @@ describe.skipIf(!url)("forms", () => {
       (await inspectPdf(await storage.get(after.fillableKey ?? ""))).fields.map((f) => f.name),
     ).toEqual(["family_name_1", "nationality"]);
     expect((await getTemplateForm(staff, { fileId })).fields).toHaveLength(2);
+  });
+
+  it("places a scanned form's blanks on the writing lines found in its image", async () => {
+    const { fileId } = await caseWithForm(await scannedForm());
+    ai.located = [
+      {
+        label: "Name",
+        type: "text",
+        page: 0,
+        box: { left: 0.1, top: 0.1, right: 0.3, bottom: 0.12 },
+        anchor: { kind: "on", item: 0 },
+        multiline: false,
+      },
+      {
+        label: "Married",
+        type: "checkbox",
+        page: 0,
+        box: { left: 0.1, top: 0.5, right: 0.12, bottom: 0.51 },
+        anchor: null,
+        multiline: false,
+      },
+    ];
+    const setUp = await analyzeTemplateForm(owner, { fileId });
+    // Claude saw the page's picture with its two lines numbered.
+    const [page] = ai.text;
+    expect(page?.image).toBeDefined();
+    expect(page?.items).toHaveLength(2);
+    const line = page?.items[0];
+    if (!line) throw new Error("no line");
+    expect(setUp.fields[0]?.rect).toEqual(placeBlank(page, { kind: "on", item: 0 }, "text"));
+    expect(setUp.fields[0]?.rect[0]).toBe(line.x);
+    expect(Math.abs((setUp.fields[0]?.rect[1] ?? 0) - 698)).toBeLessThan(1.5);
+    // The tick box had nothing to anchor to: Claude's estimate.
+    expect(setUp.fields[1]?.rect.map(Math.round)).toEqual([60, 413, 12, 8]);
   });
 
   it("sets up the template PDFs attached before, once per file", async () => {
