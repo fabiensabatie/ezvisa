@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import type { Prisma } from "@ezvisa/db";
 import { z } from "zod";
 import { audit } from "../audit.js";
-import { type Context, requireHuman, requireLevel, requireStorage } from "../context.js";
+import { type Context, requireHuman, requireLevel, requireStorage, type Tx } from "../context.js";
 import { bangkokToday, formatDateOnly } from "../dates.js";
 import { DomainError } from "../errors.js";
 import { canRead } from "../forms/ai.js";
@@ -26,6 +26,7 @@ import {
 } from "../forms/sources.js";
 import { hasLevel } from "../permissions.js";
 import { caseNumber, caseRef, caseWhere, id, notFound } from "../refs.js";
+import { safeFilename, sha256Hex } from "./files.js";
 import { readPublicSettings } from "./settings.js";
 import { readableTemplateFile } from "./templates.js";
 
@@ -371,14 +372,130 @@ async function loadCase(ctx: Context, ref: string) {
     where: caseWhere(ref),
     include: {
       client: true,
-      templateVersion: { include: { template: true, files: { orderBy: { name: "asc" } } } },
+      templateVersion: {
+        include: {
+          template: true,
+          files: { orderBy: { name: "asc" } },
+          items: { select: { id: true, formFileId: true } },
+        },
+      },
       forms: true,
+      items: {
+        include: {
+          documents: { where: { deletedAt: null }, select: { id: true, extracted: true } },
+        },
+      },
     },
   });
   if (!kase) throw notFound("case", ref);
   return kase;
 }
 type LoadedCase = Awaited<ReturnType<typeof loadCase>>;
+
+/** How a checked form's PDF is marked once it is filed on its checklist item. */
+type FormCopy = { document: string; ezvisaForm: string };
+const formCopyOf = (d: { extracted: unknown }) => {
+  const mark = d.extracted as Partial<FormCopy> | null;
+  return typeof mark?.ezvisaForm === "string" ? mark.ezvisaForm : null;
+};
+
+/** The checklist item a template form belongs to on this case, as the template links them. */
+function itemFor(kase: LoadedCase, fileId: string) {
+  const templateItem = kase.templateVersion.items.find((i) => i.formFileId === fileId);
+  return templateItem
+    ? (kase.items.find((i) => i.templateItemId === templateItem.id) ?? null)
+    : null;
+}
+
+/**
+ * Files the checked form on its checklist item: a copy of the PDF becomes the item's document,
+ * replacing a copy checked before, and the item is verified, since a person checked the form.
+ */
+async function fileOnItem(
+  ctx: Context,
+  kase: LoadedCase,
+  file: { id: string; name: string },
+  pdfKey: string,
+) {
+  const item = itemFor(kase, file.id);
+  if (!item) return;
+  const storage = requireStorage(ctx);
+  const bytes = await storage.get(pdfKey);
+  const id = randomUUID();
+  const filename = `${caseNumber(kase.number)} ${file.name}.pdf`;
+  const storageKey = `clients/${kase.clientId}/${id}/${safeFilename(filename)}`;
+  await storage.put(storageKey, bytes, "application/pdf");
+  const replaced = item.documents.filter((d) => formCopyOf(d) === file.id).map((d) => d.id);
+  const mark: FormCopy = { document: `${file.name}, filled by EzVisa`, ezvisaForm: file.id };
+  await ctx.db.$transaction(async (tx) => {
+    if (replaced.length) {
+      await tx.document.updateMany({
+        where: { id: { in: replaced } },
+        data: { deletedAt: ctx.now() },
+      });
+    }
+    await tx.document.create({
+      data: {
+        id,
+        clientId: kase.clientId,
+        caseId: kase.id,
+        caseItemId: item.id,
+        filename,
+        mimeType: "application/pdf",
+        sizeBytes: bytes.byteLength,
+        sha256: sha256Hex(bytes),
+        storageKey,
+        uploadedById: ctx.actor.employeeId,
+        extracted: mark as unknown as Prisma.InputJsonValue,
+      },
+    });
+    await tx.caseItem.update({
+      where: { id: item.id },
+      data: {
+        status: "VERIFIED",
+        note: `EzVisa filled the form and ${ctx.actor.name} checked it.`,
+        flaggedByKind: null,
+        updatedById: ctx.actor.employeeId,
+      },
+    });
+    await audit(tx, ctx, {
+      action: "case_item.updated",
+      entity: "CaseItem",
+      entityId: item.id,
+      before: { status: item.status },
+      after: { status: "VERIFIED", form: file.name, documentId: id, replaced },
+    });
+  });
+}
+
+/**
+ * A checked form that changes needs checking again: the item it verified goes back to
+ * RECEIVED. An item verified from something else (a form signed on paper) is left alone.
+ */
+async function uncheckItem(
+  tx: Tx,
+  ctx: Context,
+  kase: LoadedCase,
+  file: { id: string; name: string },
+) {
+  const item = itemFor(kase, file.id);
+  if (item?.status !== "VERIFIED" || !item.documents.some((d) => formCopyOf(d) === file.id)) return;
+  await tx.caseItem.update({
+    where: { id: item.id },
+    data: {
+      status: "RECEIVED",
+      note: `${file.name} changed after it was checked: check it again.`,
+      updatedById: ctx.actor.employeeId,
+    },
+  });
+  await audit(tx, ctx, {
+    action: "case_item.updated",
+    entity: "CaseItem",
+    entityId: item.id,
+    before: { status: "VERIFIED" },
+    after: { status: "RECEIVED", form: file.name },
+  });
+}
 
 /** The case's PDF forms and letters that EzVisa fills. */
 function formFiles(kase: LoadedCase) {
@@ -448,10 +565,12 @@ export async function requestCaseForms(ctx: Context, raw: z.input<typeof caseFor
 /** What EzVisa knows about the case, for an agent filling fields. */
 async function caseFacts(ctx: Context, kase: LoadedCase) {
   // Every document of the client counts: the passport sent for the last case is still theirs.
-  const all = await ctx.db.document.findMany({
-    where: { clientId: kase.clientId, deletedAt: null },
-    orderBy: { createdAt: "desc" },
-  });
+  const all = (
+    await ctx.db.document.findMany({
+      where: { clientId: kase.clientId, deletedAt: null },
+      orderBy: { createdAt: "desc" },
+    })
+  ).filter((d) => formCopyOf(d) === null); // EzVisa's own filled forms are not evidence
   const documents = [
     ...all.filter((d) => d.caseId === kase.id),
     ...all.filter((d) => d.caseId !== kase.id),
@@ -689,6 +808,7 @@ export async function prepareCaseForms(
           updatedById: ctx.actor.employeeId,
         },
       });
+      if (changed && existing?.status === "CHECKED") await uncheckItem(tx, ctx, kase, file);
       await audit(tx, ctx, {
         action: "case_form.prepared",
         entity: "Case",
@@ -801,6 +921,7 @@ export async function updateCaseForm(ctx: Context, raw: z.input<typeof updateCas
         updatedById: ctx.actor.employeeId,
       },
     });
+    if (form?.status === "CHECKED") await uncheckItem(tx, ctx, kase, file);
     await audit(tx, ctx, {
       action: "case_form.updated",
       entity: "Case",
@@ -819,6 +940,7 @@ export async function checkCaseForm(ctx: Context, raw: z.input<typeof caseFormIn
   const kase = await loadCase(ctx, input.case);
   const form = kase.forms.find((f) => f.templateFileId === input.fileId);
   if (!form) throw new DomainError("CONFLICT", "Fill this form before checking it.");
+  const file = formFiles(kase).find((f) => f.id === input.fileId);
   await ctx.db.$transaction(async (tx) => {
     await tx.caseForm.update({
       where: { id: form.id },
@@ -831,6 +953,8 @@ export async function checkCaseForm(ctx: Context, raw: z.input<typeof caseFormIn
       after: { fileId: input.fileId },
     });
   });
+  // The checked form is what the checklist item asks for.
+  if (file && form.pdfKey) await fileOnItem(ctx, kase, file, form.pdfKey);
   return getCaseForm(ctx, input);
 }
 
