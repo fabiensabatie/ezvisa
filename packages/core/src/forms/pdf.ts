@@ -107,7 +107,17 @@ export async function addFields(bytes: Uint8Array, fields: PdfField[]): Promise<
     const page = pages[f.page] ?? pages[0];
     if (!page) continue;
     const [x, y, width, height] = f.rect;
-    const at = { x, y, width, height, borderWidth: 0 };
+    // No background or border: the form's own dotted lines and boxes stay visible under
+    // the values (pdf-lib paints fields white unless told otherwise).
+    const at = {
+      x,
+      y,
+      width,
+      height,
+      borderWidth: 0,
+      backgroundColor: undefined,
+      borderColor: undefined,
+    };
     if (f.type === "checkbox") {
       form.createCheckBox(f.name).addToPage(page, at);
     } else if (f.type === "dropdown" && f.options?.length) {

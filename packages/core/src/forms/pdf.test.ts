@@ -56,6 +56,13 @@ describe("PDF forms", () => {
       ["name_p2", 1],
       ["agree", 1],
     ]);
+    // Transparent, so the form's dotted lines and printed boxes show under the values.
+    const form = (await PDFDocument.load(fillable)).getForm();
+    for (const name of ["name", "agree"]) {
+      const widget = form.getField(name).acroField.getWidgets()[0];
+      expect(widget?.getAppearanceCharacteristics()?.getBackgroundColor()).toBeUndefined();
+      expect(widget?.getAppearanceCharacteristics()?.getBorderColor()).toBeUndefined();
+    }
   });
 
   it("fills Thai and Latin text, boxes and choices, and stays fillable", async () => {
