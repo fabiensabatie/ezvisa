@@ -7,6 +7,7 @@ import {
   channelName,
   contactUrl,
   conversationUrl,
+  inboxChannel,
   MESSAGE_TYPE,
   senderKind,
 } from "../chat/chatwoot.js";
@@ -57,17 +58,15 @@ async function inChatwoot<T>(work: () => Promise<T>): Promise<T> {
 const iso = (seconds: number | null | undefined) =>
   seconds ? new Date(seconds * 1000).toISOString() : null;
 
-function conversationSummary(
-  chat: ChatConnection,
-  c: ChatwootConversation,
-  inboxNames: Map<number, string> = new Map(),
-) {
+type InboxIndex = Map<number, { name: string; channel: string }>;
+
+function conversationSummary(chat: ChatConnection, c: ChatwootConversation, inboxes: InboxIndex) {
   const last = c.messages?.at(-1);
   return {
     id: c.id,
     status: c.status,
-    channel: channelName(c.meta.channel),
-    inbox: inboxNames.get(c.inbox_id) ?? null,
+    channel: inboxes.get(c.inbox_id)?.channel ?? channelName(c.meta.channel),
+    inbox: inboxes.get(c.inbox_id)?.name ?? null,
     contactId: c.meta.sender.id,
     contactName: c.meta.sender.name ?? null,
     contactThumbnail: c.meta.sender.thumbnail || null,
@@ -79,8 +78,11 @@ function conversationSummary(
   };
 }
 
-async function inboxNames(chat: ChatConnection) {
-  return new Map((await chat.api.inboxes()).map((i) => [i.id, i.name]));
+/** Each inbox's name and channel, by id. */
+async function inboxIndex(chat: ChatConnection): Promise<InboxIndex> {
+  return new Map(
+    (await chat.api.inboxes()).map((i) => [i.id, { name: i.name, channel: inboxChannel(i) }]),
+  );
 }
 
 // ---- settings shared by every agent (owner) --------------------------------------------------
@@ -176,7 +178,7 @@ export async function chatInboxes(ctx: Context) {
   requireLevel(ctx, "clients", "view");
   const chat = requireChat(ctx);
   const inboxes = await inChatwoot(() => chat.api.inboxes());
-  return inboxes.map((i) => ({ id: i.id, name: i.name, channel: channelName(i.channel_type) }));
+  return inboxes.map((i) => ({ id: i.id, name: i.name, channel: inboxChannel(i) }));
 }
 
 /** Conversations waiting for a person, for the navigation badge. Null when it cannot tell. */
@@ -203,8 +205,8 @@ export async function listConversations(ctx: Context, raw: z.input<typeof listCo
   requireLevel(ctx, "clients", "view");
   const input = listConversationsInput.parse(raw);
   const chat = requireChat(ctx);
-  const [page, names] = await inChatwoot(() =>
-    Promise.all([chat.api.conversations(input), inboxNames(chat)]),
+  const [page, inboxes] = await inChatwoot(() =>
+    Promise.all([chat.api.conversations(input), inboxIndex(chat)]),
   );
   const contacts = await ctx.db.chatContact.findMany({
     where: { chatwootId: { in: page.items.map((c) => c.meta.sender.id) } },
@@ -216,7 +218,7 @@ export async function listConversations(ctx: Context, raw: z.input<typeof listCo
   const byContact = new Map(contacts.map((c) => [c.chatwootId, c]));
   return {
     items: page.items.map((c) => ({
-      ...conversationSummary(chat, c, names),
+      ...conversationSummary(chat, c, inboxes),
       client: byContact.get(c.meta.sender.id)?.client ?? null,
       employee: byContact.get(c.meta.sender.id)?.employee ?? null,
     })),
@@ -241,8 +243,8 @@ export async function getConversation(ctx: Context, raw: z.input<typeof getConve
   if (!conversation) {
     throw new DomainError("NOT_FOUND", `No conversation ${conversationId} in Chatwoot.`);
   }
-  const [messages, names] = await inChatwoot(() =>
-    Promise.all([chat.api.messages(conversationId), inboxNames(chat)]),
+  const [messages, inboxes] = await inChatwoot(() =>
+    Promise.all([chat.api.messages(conversationId), inboxIndex(chat)]),
   );
   const sender = conversation.meta.sender;
   const contact = await ctx.db.chatContact.findUnique({
@@ -263,7 +265,7 @@ export async function getConversation(ctx: Context, raw: z.input<typeof getConve
     : null;
   const agents = await ctx.db.agent.findMany({ select: { name: true, chatwootBotId: true } });
   return {
-    ...conversationSummary(chat, conversation, names),
+    ...conversationSummary(chat, conversation, inboxes),
     contact: {
       id: sender.id,
       name: sender.name ?? null,
@@ -560,19 +562,26 @@ export async function clientChats(ctx: Context, raw: z.input<typeof clientChatsI
   });
   const chat = ctx.chat;
   if (!chat) return { connected: false, contacts: [] };
-  const conversations = await Promise.all(
-    contacts.map((c) => chat.api.contactConversations(c.chatwootId).catch(() => [])),
-  );
+  const [conversations, inboxes] = await Promise.all([
+    Promise.all(contacts.map((c) => chat.api.contactConversations(c.chatwootId).catch(() => []))),
+    inboxIndex(chat).catch((): InboxIndex => new Map()),
+  ]);
   return {
     connected: true,
-    contacts: contacts.map((c, index) => ({
-      contactId: c.chatwootId,
-      name: c.name,
-      channel: channelName(c.channel),
-      linkedAt: c.linkedAt?.toISOString() ?? null,
-      linkedBy: c.linkedById ? "team" : "agent",
-      chatwootUrl: contactUrl(chat, c.chatwootId),
-      conversations: (conversations[index] ?? []).map((conv) => conversationSummary(chat, conv)),
-    })),
+    contacts: contacts.map((c, index) => {
+      const summaries = (conversations[index] ?? []).map((conv) =>
+        conversationSummary(chat, conv, inboxes),
+      );
+      return {
+        contactId: c.chatwootId,
+        name: c.name,
+        // A Twilio contact's channel (WhatsApp or SMS) is known from its conversations' inbox.
+        channel: summaries[0]?.channel ?? channelName(c.channel),
+        linkedAt: c.linkedAt?.toISOString() ?? null,
+        linkedBy: c.linkedById ? "team" : "agent",
+        chatwootUrl: contactUrl(chat, c.chatwootId),
+        conversations: summaries,
+      };
+    }),
   };
 }

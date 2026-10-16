@@ -316,6 +316,8 @@ export class ChatAgents {
   private readonly timers = new Map<string, ReturnType<typeof setTimeout>>();
   private readonly running = new Map<string, Promise<unknown>>();
   private readonly seen: string[] = [];
+  /** Twilio inboxes carry WhatsApp or SMS: each one's medium, once looked up. */
+  private readonly mediums = new Map<number, string | null>();
 
   constructor(private readonly deps: ChatAgentsDeps) {
     this.now = deps.now ?? (() => new Date());
@@ -543,10 +545,11 @@ export class ChatAgents {
     let finished = false;
     let clientId = contact.clientId;
 
+    const channel = await this.channelOf(conversation);
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
       const client = clientId ? await db.client.findUnique({ where: { id: clientId } }) : null;
       const context = [
-        `You are ${agent.name}. Today is ${formatShortDate(bangkokToday(now))} ${bangkokToday(now).slice(0, 4)} in Bangkok. This conversation is on ${channelName(conversation.meta.channel)}.`,
+        `You are ${agent.name}. Today is ${formatShortDate(bangkokToday(now))} ${bangkokToday(now).slice(0, 4)} in Bangkok. This conversation is on ${channel}.`,
         colleague
           ? `You are talking with ${colleague.name} (${colleague.role}).`
           : client
@@ -668,6 +671,18 @@ export class ChatAgents {
   }
 
   /** The EzVisa record for the person writing, linked to a client when the number matches. */
+  /** The conversation's channel as people call it ("LINE", "WhatsApp"...). */
+  private async channelOf(conversation: ChatwootConversation): Promise<string> {
+    const type = conversation.meta.channel;
+    if (type !== "Channel::TwilioSms") return channelName(type);
+    if (!this.mediums.has(conversation.inbox_id)) {
+      const inboxes = await this.deps.chat.api.inboxes().catch(() => []);
+      const inbox = inboxes.find((i) => i.id === conversation.inbox_id);
+      if (inbox) this.mediums.set(inbox.id, inbox.medium ?? null);
+    }
+    return channelName(type, this.mediums.get(conversation.inbox_id));
+  }
+
   private async contactFor(agent: LoadedAgent, conversation: ChatwootConversation) {
     const { db } = this.deps;
     const sender = conversation.meta.sender;
@@ -847,7 +862,7 @@ export class ChatAgents {
       entityId: String(conversation.id),
       after: {
         reason: handoff.reason,
-        channel: channelName(conversation.meta.channel),
+        channel: await this.channelOf(conversation),
         agentId: agent.id,
       },
     });
@@ -866,7 +881,7 @@ export class ChatAgents {
       if (!hasLevel(parsePermissions(sub.employee.role.permissions), "clients", "edit")) continue;
       const outcome = await push.send(sub, {
         title: "A conversation needs a person",
-        body: `An agent passed a ${channelName(conversation.meta.channel)} conversation to the team.`,
+        body: `An agent passed a ${await this.channelOf(conversation)} conversation to the team.`,
         // Opens the conversation in EzVisa's inbox, next to the client's cases.
         url: `/inbox/${conversation.id}`,
         tag: `chat-${conversation.id}`,

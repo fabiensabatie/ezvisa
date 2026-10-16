@@ -7,7 +7,13 @@
 /** Message types as the REST API returns them (webhooks use the names instead). */
 export const MESSAGE_TYPE = { incoming: 0, outgoing: 1, activity: 2, template: 3 } as const;
 
-export type ChatwootInbox = { id: number; name: string; channel_type: string };
+export type ChatwootInbox = {
+  id: number;
+  name: string;
+  channel_type: string;
+  /** Twilio inboxes: "whatsapp" or "sms" */
+  medium?: string | null;
+};
 
 export type ChatwootContact = {
   id: number;
@@ -342,8 +348,17 @@ export function contactUrl(chat: Pick<ChatConnection, "publicUrl" | "accountId">
   return `${chat.publicUrl}/app/accounts/${chat.accountId}/contacts/${id}`;
 }
 
-/** "Channel::Line" → "LINE", for people and push messages. */
-export function channelName(channel: string | null | undefined): string {
+/**
+ * "Channel::Line" → "LINE", for people and push messages. Twilio carries both WhatsApp and
+ * SMS under one channel type; its inbox's medium says which.
+ */
+export function channelName(
+  channel: string | null | undefined,
+  medium?: string | null | undefined,
+): string {
+  if (channel === "Channel::TwilioSms" && medium) {
+    return medium === "whatsapp" ? "WhatsApp" : "SMS";
+  }
   const names: Record<string, string> = {
     "Channel::Line": "LINE",
     "Channel::FacebookPage": "Messenger",
@@ -357,4 +372,9 @@ export function channelName(channel: string | null | undefined): string {
     "Channel::Api": "chat",
   };
   return (channel && names[channel]) ?? "chat";
+}
+
+/** An inbox's channel, as people call it. */
+export function inboxChannel(inbox: Pick<ChatwootInbox, "channel_type" | "medium">): string {
+  return channelName(inbox.channel_type, inbox.medium);
 }

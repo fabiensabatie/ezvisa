@@ -166,6 +166,32 @@ describe.skipIf(!url)("shared inbox and agents for the team", () => {
     );
   });
 
+  it("calls a Twilio inbox WhatsApp or SMS from its medium", async () => {
+    chatwoot.inboxList.push(
+      { id: 3, name: "EzVisa WhatsApp", channel_type: "Channel::TwilioSms", medium: "whatsapp" },
+      { id: 4, name: "EzVisa SMS", channel_type: "Channel::TwilioSms", medium: "sms" },
+    );
+    const conversation = chatwoot.addConversation({
+      id: 7,
+      contact: { id: 70, name: "Hans", phone_number: "+4915112345678" },
+      channel: "Channel::TwilioSms",
+      text: "Hallo",
+    });
+    conversation.inbox_id = 3;
+    expect((await listAgents(owner)).inboxes.map((i) => i.channel)).toEqual([
+      "LINE",
+      "WhatsApp",
+      "WhatsApp",
+      "SMS",
+    ]);
+    const listed = await listConversations(owner, { status: "all" });
+    expect(listed.items.find((c) => c.id === 7)).toMatchObject({
+      channel: "WhatsApp",
+      inbox: "EzVisa WhatsApp",
+    });
+    expect((await getConversation(owner, { conversationId: 7 })).channel).toBe("WhatsApp");
+  });
+
   it("lets only owners say who on the team is writing", async () => {
     chatwoot.addConversation({ id: 6, contact: { id: 60, name: "Somchai" }, text: "Hi" });
     const runner = await as("Runner");

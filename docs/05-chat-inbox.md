@@ -51,12 +51,31 @@ LINE counts every message the agency sends from Chatwoot, the agents' included, 
 
 Details: [Chatwoot's Facebook guide](https://developers.chatwoot.com/self-hosted/configuration/features/integrations/facebook-channel-setup).
 
-**WhatsApp.** Use the WhatsApp Business Platform (Cloud API), with a number that is not registered in the WhatsApp app.
+**WhatsApp, through Twilio (what EzVisa uses).** A number bought on Twilio is not on WhatsApp until Meta registers it as a WhatsApp sender. The number must not be registered in the WhatsApp app already.
+
+1. Upgrade the Twilio account if it is still a trial (Admin, Account billing).
+2. In the Twilio Console, open **Messaging, Senders, WhatsApp senders**, then **Create new sender**, and pick the Twilio number.
+3. **Continue with Facebook** opens Meta's sign-up window. Keep it and the Console open in the same browser. In it:
+   - Choose Namtarn's Meta business portfolio, or create one.
+   - Create a new WhatsApp Business Account. Do not reuse one made outside Twilio.
+   - Enter the display name, for example "EZVISA". It must follow [Meta's display name rules](https://www.facebook.com/business/help/757569725593362); Meta reviews it.
+4. Meta verifies the number with a code:
+   - An SMS-capable Twilio number (US numbers usually are) is verified by Twilio automatically.
+   - A voice-only number needs a voicemail first. In **Phone numbers, Active numbers**, open the number. Under Voice, set "A call comes in" to the webhook `https://twimlets.com/voicemail?Email=` followed by your email address. Choose **Phone call** in Meta's window; the code arrives transcribed by email within ten minutes.
+5. Once the sender is registered, open it (**Edit sender**). Set the webhook for incoming messages to `https://chatwoot-production-22d6.up.railway.app/twilio/callback`, method POST.
+6. In Chatwoot, add an SMS inbox, choose Twilio, and set the medium to **WhatsApp**. Enter the number with its country code, plus the Account SID and Auth Token from the Twilio Console home page.
+7. Send a WhatsApp message to the number from a phone. It should appear in Chatwoot and in EzVisa's Inbox.
+
+Until Meta verifies the business (Meta Security Center; it can take weeks), a sender can start at most 250 conversations a day, and the portfolio is limited to two numbers. Replies to clients who wrote first are not limited this way. Details: [Twilio's Self Sign-up guide](https://www.twilio.com/docs/whatsapp/self-sign-up).
+
+**WhatsApp, directly with Meta (alternative).** Use the WhatsApp Business Platform (Cloud API), with a number that is not registered in the WhatsApp app.
 
 1. In Meta for Developers, add **WhatsApp** to the same app and register the number.
 2. Create a permanent token: Business settings, System users, add one with `whatsapp_business_messaging` and `whatsapp_business_management`.
 3. In Chatwoot, add a WhatsApp inbox with provider WhatsApp Cloud. Enter the number, the Phone number ID, the WhatsApp Business Account ID and the token.
 4. Chatwoot then shows a callback URL and a verify token. Enter them in the app (WhatsApp, Configuration, Webhook) and subscribe to `messages`.
+
+Either way, the new inbox appears in EzVisa on its own: in the Inbox filter, and on the Agents page, where you tick it on the client agent so the agent answers there too.
 
 WhatsApp only lets a business write freely within 24 hours of the client's last message. Replies inside that window are fine; writing first, for example a reminder, needs an approved template, which EzVisa does not send yet.
 

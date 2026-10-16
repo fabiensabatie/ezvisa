@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { audit } from "../audit.js";
-import { type ChatConnection, ChatwootError, channelName } from "../chat/chatwoot.js";
+import { type ChatConnection, ChatwootError, inboxChannel } from "../chat/chatwoot.js";
 import { ensureAgentBot } from "../chat/setup.js";
 import { type Context, requireLevel } from "../context.js";
 import { DomainError } from "../errors.js";
@@ -91,7 +91,7 @@ async function inboxAssignments(chat: ChatConnection) {
   return inboxes.map((inbox, index) => ({
     id: inbox.id,
     name: inbox.name,
-    channel: channelName(inbox.channel_type),
+    channel: inboxChannel(inbox),
     botId: bots[index]?.id ?? null,
     botName: bots[index]?.name ?? null,
   }));
