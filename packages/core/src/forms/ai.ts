@@ -30,6 +30,8 @@ export type FieldToFill = {
   type: string;
   options?: string[];
   hint?: string | null;
+  /** How the value is printed (day, month, year-be...), so a date blank gets a whole date */
+  format?: string;
 };
 
 export type FilledValue = { name: string; value: string; from: string };
@@ -192,7 +194,7 @@ export class ClaudeFormAi implements FormAi {
         ClaudeFormAi.pdf(pdf),
         {
           type: "text",
-          text: `These are the form's fields:\n${JSON.stringify(fields)}\n\nFor each field give: a short English label; the source of its value, one of these keys when it fits exactly:\n${sources}\n"ai" when it must be read from the client's documents or worked out (place of birth, passport issue date, arrival date, occupation, reason for stay...), or "none" when only the agency staff can fill it (signatures, official use); the format, one of:\n${formats}\nand a hint for whoever fills it (empty if obvious). Thai forms usually want dates as written on the form: use date-be when the form shows Buddhist-era years (2560s).`,
+          text: `These are the form's fields:\n${JSON.stringify(fields)}\n\nFor each field give: a short English label; the source of its value, one of these keys when it fits exactly:\n${sources}\n"ai" when it must be read from the client's documents or worked out (place of birth, passport issue date, arrival date, occupation, reason for stay...), or "none" when only the agency staff can fill it (signatures, official use); the format, one of:\n${formats}\nand a hint for whoever fills it (empty if obvious). Thai forms usually want dates as written on the form: use date-be when the form shows Buddhist-era years (2560s). When a date is split into separate day, month and year blanks, give every blank the same source (for example today, or "ai" for an arrival date) with format day, month, and year-be where the year is in the Buddhist era (พ.ศ.) or year otherwise. The place where the form is written or filed ("written at") is case.office. An address split into road or lane, sub-district (tambon), district (amphoe) and province is "ai", as are boxes ticked for a visa category; say which part or category in the hint.`,
         },
       ],
       "high",
@@ -232,7 +234,7 @@ export class ClaudeFormAi implements FormAi {
       [
         {
           type: "text",
-          text: `Form: ${form}\n\nFields to fill:\n${JSON.stringify(fields)}\n\nWhat is known about the case (client record, case, and facts read from the client's documents):\n${JSON.stringify(facts)}\n\nGive a value for each field from these facts only. Checkboxes take "true" or "false"; choice fields take one of their options exactly. Dates as YYYY-MM-DD. Leave the value empty when the facts do not say.`,
+          text: `Form: ${form}\n\nFields to fill:\n${JSON.stringify(fields)}\n\nWhat is known about the case (client record, case, and facts read from the client's documents):\n${JSON.stringify(facts)}\n\nGive a value for each field from these facts only. Checkboxes take "true" or "false"; choice fields take one of their options exactly. Dates as YYYY-MM-DD, also for a blank whose format is day, month, year or year-be: EzVisa prints only that part. Today's date is the date the form is filled. Leave the value empty when the facts do not say.`,
         },
       ],
       "medium",

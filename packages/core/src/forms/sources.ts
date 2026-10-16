@@ -20,6 +20,7 @@ export const SOURCES = [
   { key: "case.number", label: "Case number" },
   { key: "case.service", label: "Service (template name)" },
   { key: "case.dueDate", label: "Case due date" },
+  { key: "case.office", label: "Immigration office (from the template)" },
   { key: "agency.name", label: "Agency name" },
   { key: "today", label: "Today's date" },
 ] as const;
@@ -34,6 +35,10 @@ export const FORMATS = [
   { key: "date", label: "Date 02/04/1960" },
   { key: "date-be", label: "Date, Buddhist era 02/04/2503" },
   { key: "date-long", label: "Date 2 April 1960" },
+  { key: "day", label: "Day only 02" },
+  { key: "month", label: "Month only April" },
+  { key: "year", label: "Year only 1960" },
+  { key: "year-be", label: "Year only, Buddhist era 2503" },
 ] as const;
 export type FormatKey = (typeof FORMATS)[number]["key"];
 
@@ -50,7 +55,7 @@ export type SourceContext = {
     stayUntil: Date | null;
     nextReportDue: Date | null;
   };
-  case: { number: string; service: string; dueDate: Date | null };
+  case: { number: string; service: string; dueDate: Date | null; office: string | null };
   agencyName: string;
   /** Bangkok date, YYYY-MM-DD */
   today: string;
@@ -71,9 +76,19 @@ const MONTHS = [
   "December",
 ];
 
-/** Formats a value for a form. Dates come in as YYYY-MM-DD. */
+/**
+ * Formats a value for a form. Dates come in as YYYY-MM-DD. Forms that split a date into day,
+ * month and year blanks give each blank the same date with its own part.
+ */
 export function formatValue(value: string, format: string | null | undefined): string {
   const date = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (date) {
+    const [, y, m, d] = date;
+    if (format === "day") return d as string;
+    if (format === "month") return MONTHS[Number(m) - 1] as string;
+    if (format === "year") return y as string;
+    if (format === "year-be") return String(Number(y) + 543);
+  }
   if (date && format?.startsWith("date")) {
     const [, y, m, d] = date;
     if (format === "date-be") return `${d}/${m}/${Number(y) + 543}`;
@@ -134,6 +149,8 @@ export function resolveSource(key: string, ctx: SourceContext): string | null {
       return ctx.case.service;
     case "case.dueDate":
       return date(ctx.case.dueDate);
+    case "case.office":
+      return ctx.case.office;
     case "agency.name":
       return ctx.agencyName;
     case "today":

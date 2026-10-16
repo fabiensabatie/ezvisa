@@ -417,15 +417,30 @@ export async function requestCaseForms(ctx: Context, raw: z.input<typeof caseFor
 
 /** What EzVisa knows about the case, for an agent filling fields. */
 async function caseFacts(ctx: Context, kase: LoadedCase) {
-  const documents = await ctx.db.document.findMany({
-    where: {
-      clientId: kase.clientId,
-      deletedAt: null,
-      OR: [{ caseId: kase.id }, { caseId: null }],
-    },
-    orderBy: { createdAt: "asc" },
+  // Every document of the client counts: the passport sent for the last case is still theirs.
+  const all = await ctx.db.document.findMany({
+    where: { clientId: kase.clientId, deletedAt: null },
+    orderBy: { createdAt: "desc" },
   });
-  return { documents };
+  const documents = [
+    ...all.filter((d) => d.caseId === kase.id),
+    ...all.filter((d) => d.caseId !== kase.id),
+  ];
+  const otherCases = await ctx.db.case.findMany({
+    where: { clientId: kase.clientId, id: { not: kase.id } },
+    include: { templateVersion: { include: { template: true } } },
+    orderBy: { createdAt: "desc" },
+    take: 10,
+  });
+  return {
+    documents,
+    otherCases: otherCases.map((c) => ({
+      number: caseNumber(c.number),
+      service: c.templateVersion.template.name,
+      stage: c.stage,
+      opened: formatDateOnly(c.createdAt),
+    })),
+  };
 }
 
 /**
@@ -546,11 +561,13 @@ export async function prepareCaseForms(
       number: caseNumber(kase.number),
       service: kase.templateVersion.template.name,
       dueDate: kase.dueDate,
+      office: kase.templateVersion.template.office,
     },
     agencyName: agentName,
     today,
   };
-  const documents = await readDocuments(ctx, (await caseFacts(ctx, kase)).documents);
+  const known = await caseFacts(ctx, kase);
+  const documents = await readDocuments(ctx, known.documents);
   const facts = {
     client: {
       fullName: kase.client.fullName,
@@ -567,6 +584,7 @@ export async function prepareCaseForms(
     case: { ...sources.case, dueDate: kase.dueDate ? formatDateOnly(kase.dueDate) : null },
     agency: agentName,
     today,
+    otherCases: known.otherCases,
     documents: documents.map((d) => ({
       filename: d.filename,
       ...((d.extracted as object | null) ?? {}),
@@ -597,7 +615,9 @@ export async function prepareCaseForms(
           continue;
         }
       }
-      if (field.source === "ai") toAsk.push(field);
+      // Claude fills what the record lacks from the documents (a passport number not typed
+      // into the record yet, read from the passport).
+      if (field.source !== null) toAsk.push(field);
       if (kept) values[field.name] = kept;
     }
     if (toAsk.length && ctx.forms) {
@@ -609,6 +629,7 @@ export async function prepareCaseForms(
           type: f.type,
           options: f.options,
           hint: f.hint,
+          format: f.format,
         })),
         facts,
       );

@@ -225,6 +225,32 @@ describe.skipIf(!url)("forms", () => {
     expect(doc.extracted).toEqual({ document: "Passport", "Place of birth": "Lyon" });
   });
 
+  it("prints split dates, and finds what the record lacks on any of the client's documents", async () => {
+    const { fileId, kase, client } = await caseWithForm(await fillableForm());
+    ai.descriptions = {
+      ...ai.descriptions,
+      full_name: { label: "Day", source: "today", format: "day", hint: "" },
+      signature: { label: "Year (B.E.)", source: "today", format: "year-be", hint: "" },
+    };
+    await analyzeTemplateForm(owner, { fileId });
+    // The passport was sent for an earlier case, and its number never typed into the record.
+    const earlier = await createCase(owner, { clientId: client.id, template: "extension" });
+    await addPassport(client.id, earlier.id);
+    await db.client.update({ where: { id: client.id }, data: { passportNo: null } });
+    ai.answers.passport_no = { value: "25HI01044", from: "Passport" };
+
+    await prepareCaseForms(staff, { case: kase.number });
+    expect(ai.calls).toContain("read passport.pdf");
+    expect(ai.asked[0]?.map((f) => f.name)).toEqual(["passport_no", "birth_place", "married"]);
+    const values = await pdfOf(kase.id);
+    expect(values).toMatchObject({
+      full_name: "01",
+      signature: "2569",
+      passport_no: "25HI01044",
+      birth_place: "Lyon",
+    });
+  });
+
   it("keeps what a person entered, and only a person checks the form", async () => {
     const { fileId, kase, client } = await caseWithForm(await fillableForm());
     await analyzeTemplateForm(owner, { fileId });
