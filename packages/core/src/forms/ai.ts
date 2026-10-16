@@ -1,15 +1,20 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { z } from "zod";
+import { type Anchor, describeTextLayer, type TextPage } from "./layout.js";
 import { FORMATS, SOURCES } from "./sources.js";
 
-/** A blank found on a flat form, as fractions of its page measured from the top-left corner. */
+/**
+ * A blank found on a flat form: the printed text it belongs to, when the PDF has a text
+ * layer, and Claude's own estimate as fractions of its page from the top-left corner.
+ */
 export type LocatedField = {
   label: string;
   type: "text" | "checkbox";
   /** Zero-based page index */
   page: number;
   box: { left: number; top: number; right: number; bottom: number };
+  anchor?: Anchor | null;
   multiline: boolean;
 };
 
@@ -42,8 +47,8 @@ export type ReadableFile = { bytes: Uint8Array; mimeType: string; filename: stri
 /** The model work behind forms. The server uses Claude; tests script one. */
 export interface FormAi {
   readonly name: string;
-  /** Finds where a flat form expects writing or a tick. */
-  locateFields(pdf: Uint8Array): Promise<LocatedField[]>;
+  /** Finds where a flat form expects writing or a tick, anchored to its printed text. */
+  locateFields(pdf: Uint8Array, text: TextPage[]): Promise<LocatedField[]>;
   /** Labels each field and says where its value comes from. */
   describeFields(
     pdf: Uint8Array,
@@ -77,6 +82,24 @@ const located = z.object({
       right: z.number().describe("Right edge, fraction of page width"),
       bottom: z.number().describe("Bottom edge, fraction of page height"),
       multiline: z.boolean().describe("True for a space of several lines"),
+      anchor: z
+        .object({
+          kind: z
+            .enum(["after", "on", "before"])
+            .describe(
+              "after: the blank follows this label on its line; on: this item is the blank itself (a run of dots or underscores, or a box glyph); before: a tick box printed just left of this option's text",
+            ),
+          item: z.number().int().describe("The #id of the printed text"),
+          until: z
+            .number()
+            .int()
+            .nullable()
+            .describe(
+              "For after: the #id of the next label on the same line, where the blank ends; null when it runs to the end of the line",
+            ),
+        })
+        .nullable()
+        .describe("The printed text the blank belongs to; null only when none fits"),
     }),
   ),
 });
@@ -154,14 +177,22 @@ export class ClaudeFormAi implements FormAi {
     };
   }
 
-  async locateFields(pdf: Uint8Array): Promise<LocatedField[]> {
+  async locateFields(pdf: Uint8Array, text: TextPage[]): Promise<LocatedField[]> {
+    const printed = text.some((p) => p.items.length > 0)
+      ? `
+
+The text printed on the form, one item per line with its #id and position in PDF points:
+${describeTextLayer(text)}
+
+For each blank, give its anchor: the item it belongs to. Most blanks follow their label on the same line (after), up to the next label on that line (until) or to the end of the line. When the label and its blank are printed together as dots or underscores, anchor on the dots. For a tick box, anchor before its option's text, or on the box glyph if one is printed. Bilingual forms print a Thai label and an English one below it: anchor to the label on the blank's own line.`
+      : "";
     const answer = await this.ask(
       located,
       [
         ClaudeFormAi.pdf(pdf),
         {
           type: "text",
-          text: "This is a blank form. List every place where the applicant or the agency writes something or ticks a box: one entry per blank line, box or cell, including signature and date lines. Give the writing space only, not the printed label, as fractions of the page measured from its top-left corner.",
+          text: `This is a blank form. List every place where the applicant or the agency writes something or ticks a box: one entry per blank line, box or cell, including signature and date lines, but not sections for official use only. Give the writing space only, not the printed label, as fractions of the page measured from its top-left corner.${printed}`,
         },
       ],
       "high",
@@ -177,6 +208,7 @@ export class ClaudeFormAi implements FormAi {
           right: clamp(f.right),
           bottom: clamp(f.bottom),
         },
+        anchor: f.anchor,
         multiline: f.multiline,
       }))
       .filter((f) => f.box.right > f.box.left && f.box.bottom > f.box.top);

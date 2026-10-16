@@ -3,6 +3,7 @@ import { PDFDocument, StandardFonts } from "pdf-lib";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Context } from "../context.js";
 import { FakeFormAi } from "../forms/fakes.js";
+import { placeBlank, readTextLayer } from "../forms/layout.js";
 import { inspectPdf, readPdfValues } from "../forms/pdf.js";
 import { FormPreparer } from "../forms/preparer.js";
 import { ASSISTANT_EMAIL } from "../seed-base.js";
@@ -295,13 +296,19 @@ describe.skipIf(!url)("forms", () => {
   });
 
   it("adds fields to a flat PDF where Claude finds the blanks, and lets the team move them", async () => {
-    const { fileId } = await caseWithForm(await flatForm());
+    const flat = await flatForm();
+    const { fileId } = await caseWithForm(flat);
+    // The family name's blank is the dots printed after its label: measured from the text.
+    const [text] = await readTextLayer(flat);
+    const dots = text?.items.find((i) => i.y === 740 && /^\.+$/.test(i.text));
+    if (!text || !dots) throw new Error("no dots on the test form");
     ai.located = [
       {
         label: "Family name",
         type: "text",
         page: 0,
         box: { left: 0.2, top: 0.1, right: 0.6, bottom: 0.13 },
+        anchor: { kind: "on", item: dots.id },
         multiline: false,
       },
       {
@@ -329,8 +336,12 @@ describe.skipIf(!url)("forms", () => {
       ["family_name_1", "client.surname"],
       ["signature_2", null],
     ]);
-    const [x, y, w, h] = setUp.fields[0]?.rect ?? [];
-    expect([x, y, w, h].map((n) => Math.round(n ?? 0))).toEqual([119, 733, 238, 25]);
+    expect(ai.text[0]?.items.map((i) => i.text)).toContain("Family name");
+    expect(setUp.fields[0]?.rect).toEqual(placeBlank(text, { kind: "on", item: dots.id }, "text"));
+    expect(setUp.fields[0]?.rect[0]).toBe(dots.x);
+    // The signature had no anchor: Claude's estimate, as fractions of the page.
+    const [x, y, w, h] = setUp.fields[1]?.rect ?? [];
+    expect([x, y, w, h].map((n) => Math.round(n ?? 0))).toEqual([119, 185, 179, 25]);
     const file = await db.templateFile.findUniqueOrThrow({ where: { id: fileId } });
     expect(file.fillableKey).toMatch(/fillable-[0-9a-f-]+\.pdf$/);
     const fillable = await inspectPdf(await storage.get(file.fillableKey ?? ""));

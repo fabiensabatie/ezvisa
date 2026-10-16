@@ -6,6 +6,7 @@ import { type Context, requireHuman, requireLevel, requireStorage } from "../con
 import { bangkokToday, formatDateOnly } from "../dates.js";
 import { DomainError } from "../errors.js";
 import { canRead } from "../forms/ai.js";
+import { placeBlank, readTextLayer } from "../forms/layout.js";
 import { addFields, type FillValue, fillPdf, inspectPdf, type PdfField } from "../forms/pdf.js";
 import {
   FORMATS,
@@ -154,23 +155,28 @@ export async function analyzeTemplateForm(
         `${file.name} has no form fields. Making it fillable needs Claude: set ANTHROPIC_API_KEY on the server.`,
       );
     }
-    const located = await ctx.forms.locateFields(original);
+    // A scan has no text layer; the boxes then come from Claude's estimate alone.
+    const text = await readTextLayer(original).catch(() => []);
+    const located = await ctx.forms.locateFields(original, text);
     if (located.length === 0) {
       throw new DomainError("CONFLICT", `No blanks were found on ${file.name}.`);
     }
     const taken = new Set<string>();
     fields = located.map((f, index) => {
-      const page = info.pages[f.page] ?? info.pages[0] ?? { width: 595, height: 842 };
+      const pageIndex = Math.min(f.page, info.pages.length - 1);
+      const page = info.pages[pageIndex] ?? { width: 595, height: 842 };
+      // Measured from the printed label when Claude named one; its estimate otherwise.
+      const rect = placeBlank(text[pageIndex], f.anchor, f.type) ?? [
+        f.box.left * page.width,
+        (1 - f.box.bottom) * page.height,
+        (f.box.right - f.box.left) * page.width,
+        (f.box.bottom - f.box.top) * page.height,
+      ];
       return {
         name: fieldName(f.label, index, taken),
         type: f.type,
-        page: Math.min(f.page, info.pages.length - 1),
-        rect: [
-          f.box.left * page.width,
-          (1 - f.box.bottom) * page.height,
-          (f.box.right - f.box.left) * page.width,
-          (f.box.bottom - f.box.top) * page.height,
-        ],
+        page: pageIndex,
+        rect,
         multiline: f.multiline,
       };
     });

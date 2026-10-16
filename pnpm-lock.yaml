@@ -320,6 +320,9 @@ importers:
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
+      pdfjs-dist:
+        specifier: ^5.4.296
+        version: 5.4.296
       web-push:
         specifier: ^3.6.7
         version: 3.6.7

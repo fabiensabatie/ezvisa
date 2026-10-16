@@ -7,6 +7,7 @@ import type {
   ReadableFile,
   ReadDocument,
 } from "./ai.js";
+import type { TextPage } from "./layout.js";
 
 /** A FormAi that answers from a script and records what it was asked, for tests. */
 export class FakeFormAi implements FormAi {
@@ -21,8 +22,12 @@ export class FakeFormAi implements FormAi {
   readonly calls: string[] = [];
   readonly asked: FieldToFill[][] = [];
 
-  async locateFields(_pdf: Uint8Array): Promise<LocatedField[]> {
+  /** The text layer the last locateFields call was given */
+  text: TextPage[] = [];
+
+  async locateFields(_pdf: Uint8Array, text: TextPage[]): Promise<LocatedField[]> {
     this.calls.push("locate");
+    this.text = text;
     return this.located;
   }
 
