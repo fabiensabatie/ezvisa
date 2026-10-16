@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import fontkit from "@pdf-lib/fontkit";
 import {
+  degrees,
   PDFCheckBox,
   PDFDocument,
   PDFDropdown,
@@ -62,6 +63,36 @@ function options(field: PDFField): string[] | undefined {
 
 async function load(bytes: Uint8Array) {
   return PDFDocument.load(bytes, { ignoreEncryption: true, updateMetadata: false });
+}
+
+/**
+ * The same PDF with every page upright: a page stored landscape and turned for display
+ * (/Rotate) is redrawn as it is seen. Fields added to a flat form then sit where people see
+ * them, and its text, its writing lines and Claude's view share one set of coordinates.
+ * Returns the bytes unchanged when no page is turned.
+ */
+export async function uprightPages(bytes: Uint8Array): Promise<Uint8Array> {
+  const source = await load(bytes);
+  const turn = (page: ReturnType<PDFDocument["getPages"]>[number]) =>
+    (((page.getRotation().angle % 360) + 360) % 360) as 0 | 90 | 180 | 270;
+  if (source.getPages().every((p) => turn(p) === 0)) return bytes;
+  const out = await PDFDocument.create();
+  for (const page of source.getPages()) {
+    const { width, height } = page.getMediaBox();
+    const embedded = await out.embedPage(page);
+    const angle = turn(page);
+    const sideways = angle === 90 || angle === 270;
+    const upright = out.addPage(sideways ? [height, width] : [width, height]);
+    // A viewer turns the page clockwise by its /Rotate; drawPage turns counterclockwise.
+    const at = {
+      0: { x: 0, y: 0 },
+      90: { x: 0, y: width },
+      180: { x: width, y: height },
+      270: { x: height, y: 0 },
+    }[angle];
+    upright.drawPage(embedded, { ...at, rotate: degrees(-angle) });
+  }
+  return out.save();
 }
 
 /** The pages and the form fields a PDF already has. A flat scan has none. */

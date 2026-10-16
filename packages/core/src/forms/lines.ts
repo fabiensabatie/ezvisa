@@ -37,9 +37,9 @@ export function findLines(gray: Uint8Array, width: number, height: number, scale
   // A dot or a rule has clear paper above and below it. A letter does not: its body fills the
   // band above its baseline, and the band below the top of its strokes.
   const above = [Math.round(1.5 * scale), Math.round(7 * scale)] as const;
-  const below = [Math.round(1.5 * scale), Math.round(4 * scale)] as const;
+  const below = [Math.round(1.5 * scale), Math.round(5.5 * scale)] as const;
   const maxGap = Math.round(6 * scale);
-  const minLength = Math.round(24 * scale);
+  const minLength = Math.round(15 * scale);
   // A scanned line may break into short pieces; specks of dust are shorter still.
   const minPiece = Math.round(4 * scale);
   const clear = (x: number, y: number, from: number, to: number, sign: 1 | -1) => {

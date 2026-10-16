@@ -141,11 +141,13 @@ describe.skipIf(!url)("forms", () => {
 
   /** A published template with the given PDF as its form, and a case on it. */
   async function caseWithForm(pdf: Uint8Array, ctx: Context = owner) {
-    await createTemplate(ctx, {
+    const created = await createTemplate(ctx, {
       slug: "extension",
       name: "Retirement extension",
       items: [{ label: "Passport" }, { label: "TM.7 application", kind: "FORM" }],
     });
+    // The form is the one behind the "TM.7 application" item.
+    const formItem = created.draft?.items.find((i) => i.kind === "FORM");
     const draft = await attachTemplateFile(ctx, {
       template: "extension",
       name: "TM.7 application",
@@ -153,6 +155,7 @@ describe.skipIf(!url)("forms", () => {
       filename: "tm7.pdf",
       mimeType: "application/pdf",
       contentBase64: base64(pdf),
+      ...(formItem ? { itemId: formItem.id } : {}),
     });
     const fileId = draft.draft?.files[0]?.id ?? "";
     await publishTemplateVersion(ctx, { template: "extension" });
@@ -298,9 +301,32 @@ describe.skipIf(!url)("forms", () => {
     const checked = await checkCaseForm(staff, { case: kase.number, fileId });
     expect(checked).toMatchObject({ status: "CHECKED", checkedBy: "Ploy S." });
 
+    // The checked form is filed on its checklist item, which a person has now verified.
+    const formItem = async () =>
+      db.caseItem.findFirstOrThrow({
+        where: { caseId: kase.id, label: "TM.7 application" },
+        include: { documents: { where: { deletedAt: null } } },
+      });
+    const verified = await formItem();
+    expect(verified).toMatchObject({
+      status: "VERIFIED",
+      note: "EzVisa filled the form and Ploy S. checked it.",
+    });
+    expect(verified.documents.map((d) => d.filename)).toEqual([
+      `${kase.number} TM.7 application.pdf`,
+    ]);
+    const filed = verified.documents[0];
+    expect((await readPdfValues(await storage.get(filed?.storageKey ?? ""))).birth_place).toBe(
+      "Lyon, France",
+    );
+    // Not read back as one of the client's documents.
+    const reads = ai.calls.filter((c) => c.startsWith("read")).length;
+
     // Filling again with nothing new keeps the check; a change sends it back to draft.
     await prepareCaseForms(assistant, { case: kase.number });
     expect((await getCaseForm(staff, { case: kase.number, fileId })).status).toBe("CHECKED");
+    expect(ai.calls.filter((c) => c.startsWith("read"))).toHaveLength(reads);
+    expect((await formItem()).status).toBe("VERIFIED");
     const changed = await updateCaseForm(assistant, {
       case: kase.number,
       fileId,
@@ -308,6 +334,20 @@ describe.skipIf(!url)("forms", () => {
     });
     expect(changed).toMatchObject({ status: "DRAFT", checkedBy: null });
     expect(changed.fields.find((f) => f.name === "married")).toMatchObject({ by: "agent" });
+    expect(await formItem()).toMatchObject({
+      status: "RECEIVED",
+      note: "TM.7 application changed after it was checked: check it again.",
+    });
+
+    // Checked again: the new copy replaces the old one on the item.
+    await checkCaseForm(staff, { case: kase.number, fileId });
+    const again = await formItem();
+    expect(again.status).toBe("VERIFIED");
+    expect(again.documents).toHaveLength(1);
+    expect(again.documents[0]?.id).not.toBe(filed?.id);
+    expect(
+      (await readPdfValues(await storage.get(again.documents[0]?.storageKey ?? ""))).married,
+    ).toBe(true);
   });
 
   it("adds fields to a flat PDF where Claude finds the blanks, and lets the team move them", async () => {
