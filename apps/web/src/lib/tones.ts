@@ -53,6 +53,7 @@ export const REMINDER_STATUS: Record<string, { label: string; tone: Tone }> = {
 
 export const DEADLINE_LABEL: Record<string, string> = {
   STAY_ENDS: "Permission to stay ends",
+  WORK_PERMIT_ENDS: "Work permit expires",
   REPORT_DUE: "90-day report due",
 };
 

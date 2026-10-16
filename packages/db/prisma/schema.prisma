@@ -230,31 +230,33 @@ model Session {
 }
 
 model Client {
-  id            String        @id @default(uuid(7)) @db.Uuid
-  fullName      String
+  id              String        @id @default(uuid(7)) @db.Uuid
+  fullName        String
   /// ISO 3166-1 alpha-2
-  nationality   String
-  passportNo    String?
-  dateOfBirth   DateTime?     @db.Date
-  email         String?
-  phone         String?
-  channel       Channel       @default(LINE)
-  channelHandle String?
-  address       String?
+  nationality     String
+  passportNo      String?
+  dateOfBirth     DateTime?     @db.Date
+  email           String?
+  phone           String?
+  channel         Channel       @default(LINE)
+  channelHandle   String?
+  address         String?
   /// Free text for now, e.g. "Non-O retirement", "DTV"
-  visaType      String?
-  stayUntil     DateTime?     @db.Date
-  nextReportDue DateTime?     @db.Date
-  notes         String?
+  visaType        String?
+  stayUntil       DateTime?     @db.Date
+  /// Tracked for display only; no reminders follow it yet.
+  workPermitUntil DateTime?     @db.Date
+  nextReportDue   DateTime?     @db.Date
+  notes           String?
   /// PDPA consent captured at intake. Documents cannot be uploaded before it is set.
-  consentAt     DateTime?
-  cases         Case[]
-  documents     Document[]
-  reminders     Reminder[]
-  chatContacts  ChatContact[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
-  deletedAt     DateTime?
+  consentAt       DateTime?
+  cases           Case[]
+  documents       Document[]
+  reminders       Reminder[]
+  chatContacts    ChatContact[]
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  deletedAt       DateTime?
 
   @@index([stayUntil])
   @@index([nextReportDue])

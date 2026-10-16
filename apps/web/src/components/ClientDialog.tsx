@@ -50,6 +50,7 @@ export function ClientDialog({
     address: client?.address ?? "",
     visaType: client?.visaType ?? "",
     stayUntil: client?.stayUntil ?? "",
+    workPermitUntil: client?.workPermitUntil ?? "",
     nextReportDue: client?.nextReportDue ?? "",
     notes: client?.notes ?? "",
     consent: Boolean(client?.consentAt),
@@ -76,6 +77,7 @@ export function ClientDialog({
           address: nullable(form.address),
           visaType: nullable(form.visaType),
           stayUntil: nullable(form.stayUntil),
+          workPermitUntil: nullable(form.workPermitUntil),
           nextReportDue: nullable(form.nextReportDue),
           notes: nullable(form.notes),
           ...(form.consent !== Boolean(client.consentAt) ? { consentGiven: form.consent } : {}),
@@ -100,6 +102,7 @@ export function ClientDialog({
         address: optional(form.address),
         visaType: optional(form.visaType),
         stayUntil: optional(form.stayUntil),
+        workPermitUntil: optional(form.workPermitUntil),
         nextReportDue: optional(form.nextReportDue),
         notes: optional(form.notes),
         consentGiven: form.consent,
@@ -212,14 +215,19 @@ export function ClientDialog({
           value={form.visaType}
           onChange={(e) => set("visaType")(e.target.value)}
         />
-        <div />
-      </FieldRow>
-      <FieldRow>
         <TextField
           label="Permission to stay ends"
           type="date"
           value={form.stayUntil}
           onChange={(e) => set("stayUntil")(e.target.value)}
+        />
+      </FieldRow>
+      <FieldRow>
+        <TextField
+          label="Work permit expires"
+          type="date"
+          value={form.workPermitUntil}
+          onChange={(e) => set("workPermitUntil")(e.target.value)}
         />
         <TextField
           label="Next 90-day report"

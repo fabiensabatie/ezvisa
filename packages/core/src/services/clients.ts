@@ -32,6 +32,7 @@ const fields = {
   address: z.string().trim().max(500).describe("Address in Thailand"),
   visaType: z.string().trim().max(120).describe('Current visa, e.g. "Non-O retirement" or "DTV"'),
   stayUntil: dateOnly.describe("Date the permission to stay ends, YYYY-MM-DD"),
+  workPermitUntil: dateOnly.describe("Date the work permit expires, YYYY-MM-DD"),
   nextReportDue: dateOnly.describe("Date the next 90-day report is due, YYYY-MM-DD"),
   notes: z.string().max(5000).describe("Free notes"),
 };
@@ -48,6 +49,7 @@ export const createClientInput = z.object({
   address: fields.address.optional(),
   visaType: fields.visaType.optional(),
   stayUntil: fields.stayUntil.optional(),
+  workPermitUntil: fields.workPermitUntil.optional(),
   nextReportDue: fields.nextReportDue.optional(),
   notes: fields.notes.optional(),
   consentGiven: z
@@ -69,6 +71,7 @@ export const updateClientInput = z.object({
   address: fields.address.nullable().optional(),
   visaType: fields.visaType.nullable().optional(),
   stayUntil: fields.stayUntil.nullable().optional(),
+  workPermitUntil: fields.workPermitUntil.nullable().optional(),
   nextReportDue: fields.nextReportDue.nullable().optional(),
   notes: fields.notes.nullable().optional(),
   consentGiven: z
@@ -162,6 +165,7 @@ export async function getClient(ctx: Context, raw: z.input<typeof getClientInput
   const today = bangkokToday(ctx.now());
   const deadlines = [
     { kind: "STAY_ENDS", date: client.stayUntil },
+    { kind: "WORK_PERMIT_ENDS", date: client.workPermitUntil },
     { kind: "REPORT_DUE", date: client.nextReportDue },
   ]
     .filter((d): d is { kind: string; date: Date } => d.date !== null)
@@ -190,6 +194,7 @@ export async function createClient(ctx: Context, raw: z.input<typeof createClien
         email: input.email?.toLowerCase(),
         dateOfBirth: dateOrNull(input.dateOfBirth),
         stayUntil: dateOrNull(input.stayUntil),
+        workPermitUntil: dateOrNull(input.workPermitUntil),
         nextReportDue: dateOrNull(input.nextReportDue),
         consentAt: consentGiven ? ctx.now() : null,
       },
@@ -218,6 +223,7 @@ export async function updateClient(ctx: Context, raw: z.input<typeof updateClien
         email: input.email === null ? null : input.email?.toLowerCase(),
         dateOfBirth: dateOrNull(input.dateOfBirth),
         stayUntil: dateOrNull(input.stayUntil),
+        workPermitUntil: dateOrNull(input.workPermitUntil),
         nextReportDue: dateOrNull(input.nextReportDue),
         consentAt:
           consentGiven === undefined

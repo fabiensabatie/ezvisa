@@ -109,12 +109,13 @@ export function ClientsPage() {
             <Empty>No clients match.</Empty>
           ) : (
             <Card className="!p-2 overflow-x-auto">
-              <table className="w-full min-w-[860px] text-left text-sm">
+              <table className="w-full min-w-[1020px] text-left text-sm">
                 <thead className="text-xs font-extrabold uppercase tracking-wide text-muted">
                   <tr>
                     <th className="px-3.5 py-3">Client</th>
                     <th className="px-3.5 py-3">Current visa</th>
                     <th className="px-3.5 py-3">Permission to stay ends</th>
+                    <th className="px-3.5 py-3">Work permit expires</th>
                     <th className="px-3.5 py-3">Next 90-day report</th>
                     <th className="px-3.5 py-3">Consent</th>
                     <th className="px-3.5 py-3">Channel</th>
@@ -141,6 +142,9 @@ export function ClientsPage() {
                       <td className="px-3.5 py-3 text-text-soft">{c.visaType ?? "Not recorded"}</td>
                       <td className="px-3.5 py-3">
                         <DateCell date={c.stayUntil} />
+                      </td>
+                      <td className="px-3.5 py-3">
+                        <DateCell date={c.workPermitUntil} />
                       </td>
                       <td className="px-3.5 py-3">
                         <DateCell date={c.nextReportDue} />
