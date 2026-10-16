@@ -8,7 +8,14 @@ import { DomainError } from "../errors.js";
 import { canRead } from "../forms/ai.js";
 import { placeBlank, readTextLayer, type TextPage } from "../forms/layout.js";
 import { readScanLines } from "../forms/lines.js";
-import { addFields, type FillValue, fillPdf, inspectPdf, type PdfField } from "../forms/pdf.js";
+import {
+  addFields,
+  type FillValue,
+  fillPdf,
+  inspectPdf,
+  type PdfField,
+  uprightPages,
+} from "../forms/pdf.js";
 import {
   FORMATS,
   formatValue,
@@ -157,6 +164,7 @@ export async function analyzeTemplateForm(
   const info = await inspectPdf(original);
 
   let origin: FieldMap["origin"] = "native";
+  let pages = info.pages;
   let fields: PdfField[] = info.fields;
   let fillableKey: string | null = null;
   let fillable = original;
@@ -167,17 +175,20 @@ export async function analyzeTemplateForm(
         `${file.name} has no form fields. Making it fillable needs Claude: set ANTHROPIC_API_KEY on the server.`,
       );
     }
+    // Pages turned for display are redrawn upright first, so everything below agrees.
+    const upright = await uprightPages(original);
+    if (upright !== original) pages = (await inspectPdf(upright)).pages;
     // A scan has no text layer: its pages are read for writing lines instead. Without either,
     // the boxes come from Claude's estimate alone.
-    const text = await readLayout(original);
-    const located = await ctx.forms.locateFields(original, text);
+    const text = await readLayout(upright);
+    const located = await ctx.forms.locateFields(upright, text);
     if (located.length === 0) {
       throw new DomainError("CONFLICT", `No blanks were found on ${file.name}.`);
     }
     const taken = new Set<string>();
     fields = located.map((f, index) => {
-      const pageIndex = Math.min(f.page, info.pages.length - 1);
-      const page = info.pages[pageIndex] ?? { width: 595, height: 842 };
+      const pageIndex = Math.min(f.page, pages.length - 1);
+      const page = pages[pageIndex] ?? { width: 595, height: 842 };
       // Measured from the printed label when Claude named one; its estimate otherwise.
       const rect = placeBlank(text[pageIndex], f.anchor, f.type) ?? [
         f.box.left * page.width,
@@ -193,7 +204,7 @@ export async function analyzeTemplateForm(
         multiline: f.multiline,
       };
     });
-    fillable = await addFields(original, fields);
+    fillable = await addFields(upright, fields);
     fillableKey = `${dirOf(file.storageKey)}/fillable-${randomUUID()}.pdf`;
     await storage.put(fillableKey, fillable, "application/pdf");
     origin = "added";
@@ -210,7 +221,7 @@ export async function analyzeTemplateForm(
     version: 1,
     origin,
     analyzedAt: ctx.now().toISOString(),
-    pages: info.pages,
+    pages,
     fields: fields.map((f) => {
       const d = byName.get(f.name);
       return {
@@ -330,7 +341,7 @@ export async function updateTemplateForm(
     });
     // The boxes changed: make a new fillable copy from the original scan.
     const original = await storage.get(file.storageKey);
-    const bytes = await addFields(original, fields);
+    const bytes = await addFields(await uprightPages(original), fields);
     fillableKey = `${dirOf(file.storageKey)}/fillable-${randomUUID()}.pdf`;
     await storage.put(fillableKey, bytes, "application/pdf");
   }
