@@ -20,7 +20,7 @@ const MAX_TEMPLATE_FILE_MB = MAX_TEMPLATE_FILE_BYTES / 1024 / 1024;
 
 const itemKind = z.enum(["DOCUMENT", "FORM", "PAYMENT", "OTHER"]);
 const fileKind = z.enum(["PDF_FORM", "LETTER", "REFERENCE"]);
-const deadlineKind = z.enum(["STAY_ENDS", "REPORT_DUE"]);
+const deadlineKind = z.enum(["STAY_ENDS", "REPORT_DUE", "WORK_PERMIT_ENDS"]);
 const rules = z
   .record(z.string(), z.unknown())
   .describe('Machine-checkable rules, e.g. {"maxAgeDays": 7} for a bank letter');

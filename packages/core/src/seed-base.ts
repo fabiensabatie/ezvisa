@@ -14,6 +14,12 @@ export const REMINDER_RULES = [
     messageTemplate:
       "Hi {first_name}, your 90-day report is due on {deadline}, in {days_left} days. Reply here and we will file it for you. {agent_name}, EzVisa",
   },
+  {
+    kind: "WORK_PERMIT_ENDS" as const,
+    offsetsDays: [60, 30, 14, 7],
+    messageTemplate:
+      "Hi {first_name}, your work permit expires on {deadline}, in {days_left} days. Reply here and we will start the renewal. {agent_name}, EzVisa",
+  },
 ];
 
 export const ASSISTANT_EMAIL = "assistant@ezvisa.local";

@@ -30,7 +30,7 @@ type Template = Outputs["templates"]["get"];
 type TemplateItem = Template["selected"]["items"][number];
 type ItemKind = TemplateItem["kind"];
 type FileKind = Template["selected"]["files"][number]["kind"];
-type DeadlineKind = "STAY_ENDS" | "REPORT_DUE";
+type DeadlineKind = "STAY_ENDS" | "REPORT_DUE" | "WORK_PERMIT_ENDS";
 
 const ITEM_KINDS: ReadonlyArray<{ value: ItemKind; label: string }> = [
   { value: "DOCUMENT", label: "Document from the client" },
@@ -47,6 +47,10 @@ const DEADLINE_OPTIONS = [
   { value: "", label: "None" },
   { value: "STAY_ENDS", label: DEADLINE_LABEL.STAY_ENDS ?? "Permission to stay ends" },
   { value: "REPORT_DUE", label: DEADLINE_LABEL.REPORT_DUE ?? "90-day report due" },
+  {
+    value: "WORK_PERMIT_ENDS",
+    label: DEADLINE_LABEL.WORK_PERMIT_ENDS ?? "Work permit expires",
+  },
 ];
 
 function slugify(name: string): string {

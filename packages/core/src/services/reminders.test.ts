@@ -71,6 +71,29 @@ describe.skipIf(!url)("reminders service", () => {
     expect(await db.reminder.count({ where: { clientId: chen.id } })).toBe(3);
   });
 
+  it("schedules reminders and lists deadlines for work permits", async () => {
+    // Work permit expires in 14 days: the 14-day reminder is due today, so no catch-up is added.
+    const ana = await createClient(owner, {
+      fullName: "Ana Silva",
+      nationality: "BR",
+      workPermitUntil: "2026-10-15",
+    });
+    const { items } = await listReminders(owner, { withinDays: 60 });
+    const forAna = items.filter((r) => r.client.id === ana.id);
+    expect(forAna.map((r) => [r.kind, r.offsetDays, r.sendOn, r.status])).toEqual([
+      ["WORK_PERMIT_ENDS", 14, "2026-10-01", "DUE"],
+      ["WORK_PERMIT_ENDS", 7, "2026-10-08", "SCHEDULED"],
+    ]);
+    expect(forAna[0]?.message).toBe(
+      "Hi Ana, your work permit expires on 15 Oct, in 14 days. Reply here and we will start the renewal. Namtarn, EzVisa",
+    );
+
+    const deadlines = await listDeadlines(owner, { withinDays: 30 });
+    expect(deadlines.items).toEqual([
+      expect.objectContaining({ kind: "WORK_PERMIT_ENDS", deadline: "2026-10-15", daysLeft: 14 }),
+    ]);
+  });
+
   it("cancels pending reminders when the deadline moves", async () => {
     const client = await createClient(owner, {
       fullName: "Tom",
