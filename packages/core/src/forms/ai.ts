@@ -67,7 +67,7 @@ export function canRead(mimeType: string): boolean {
   return mimeType === "application/pdf" || (IMAGE_TYPES as readonly string[]).includes(mimeType);
 }
 
-const SYSTEM = `You prepare Thai immigration paperwork for a visa agency in Chiang Mai. You read official forms and the documents clients send (passports, visas, bank letters, leases, TM.6 and TM.30 receipts), and you are exact: copy names, numbers and dates as printed, write dates as YYYY-MM-DD, and leave a value empty rather than guess.`;
+const SYSTEM = `You prepare Thai immigration paperwork for a visa agency in Chiang Mai. You read official forms and the documents clients send (passports, visas, bank letters, leases, TDAC, TM.6 and TM.30 receipts), and you are exact: copy names, numbers and dates as printed, write dates as YYYY-MM-DD, and leave a value empty rather than guess. Since May 2025 the TDAC (Thailand Digital Arrival Card) replaces the paper TM.6 departure/arrival card: where a form asks for the TM.6 or arrival card number, the arrival date, the flight or vehicle, or the port of departure, the client's latest TDAC gives them.`;
 
 const located = z.object({
   fields: z.array(
@@ -273,7 +273,7 @@ For each blank, give its anchor: the item it belongs to. Most blanks follow thei
         block,
         {
           type: "text",
-          text: `File name: ${file.filename}. Say what this document is, then list the facts printed on it that an immigration form may ask for: names as printed, passport or document numbers, nationality, sex, dates (YYYY-MM-DD), places of birth and issue, addresses, amounts with currency, account or reference numbers, visa types and permitted-stay dates, issuing authority.`,
+          text: `File name: ${file.filename}. Say what this document is, then list the facts printed on it that an immigration form may ask for: names as printed, passport or document numbers, nationality, sex, dates (YYYY-MM-DD), places of birth and issue, addresses, amounts with currency, account or reference numbers, visa types and permitted-stay dates, issuing authority. On a TDAC or TM.6: the card number, arrival date, flight or vehicle number, where the client boarded, purpose of travel and the address in Thailand.`,
         },
       ],
       "medium",
