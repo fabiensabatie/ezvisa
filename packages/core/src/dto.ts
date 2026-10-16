@@ -37,6 +37,7 @@ export function clientDto(c: Client) {
     address: c.address,
     visaType: c.visaType,
     stayUntil: formatDateOnlyOrNull(c.stayUntil),
+    workPermitUntil: formatDateOnlyOrNull(c.workPermitUntil),
     nextReportDue: formatDateOnlyOrNull(c.nextReportDue),
     notes: c.notes,
     consentAt: iso(c.consentAt),
