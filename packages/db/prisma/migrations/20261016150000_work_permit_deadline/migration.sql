@@ -1,0 +1,2 @@
+-- AlterEnum
+ALTER TYPE "DeadlineKind" ADD VALUE 'WORK_PERMIT_ENDS';

@@ -86,6 +86,7 @@ enum VersionStatus {
 enum DeadlineKind {
   STAY_ENDS
   REPORT_DUE
+  WORK_PERMIT_ENDS
 }
 
 enum ReminderStatus {
@@ -244,7 +245,6 @@ model Client {
   /// Free text for now, e.g. "Non-O retirement", "DTV"
   visaType        String?
   stayUntil       DateTime?     @db.Date
-  /// Tracked for display only; no reminders follow it yet.
   workPermitUntil DateTime?     @db.Date
   nextReportDue   DateTime?     @db.Date
   notes           String?

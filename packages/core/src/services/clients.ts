@@ -93,7 +93,9 @@ export const listClientsInput = z.object({
     .min(0)
     .max(365)
     .optional()
-    .describe("Only clients whose stay ends or 90-day report is due within this many days"),
+    .describe(
+      "Only clients whose stay ends, 90-day report is due or work permit expires within this many days",
+    ),
   ...pageInput,
 });
 
@@ -131,7 +133,9 @@ export async function listClients(ctx: Context, raw: z.input<typeof listClientsI
       gte: parseDateOnly(today),
       lte: parseDateOnly(addDays(today, input.expiringWithinDays)),
     };
-    and.push({ OR: [{ stayUntil: range }, { nextReportDue: range }] });
+    and.push({
+      OR: [{ stayUntil: range }, { nextReportDue: range }, { workPermitUntil: range }],
+    });
   }
 
   const rows = await ctx.db.client.findMany({

@@ -14,8 +14,13 @@ import { reminderDto, reminderRuleDto } from "../dto.js";
 import { DomainError } from "../errors.js";
 import { caseNumber, id, notFound } from "../refs.js";
 
-const deadlineKind = z.enum(["STAY_ENDS", "REPORT_DUE"]);
-const FIELD = { STAY_ENDS: "stayUntil", REPORT_DUE: "nextReportDue" } as const;
+const DEADLINE_KINDS = ["STAY_ENDS", "REPORT_DUE", "WORK_PERMIT_ENDS"] as const;
+const deadlineKind = z.enum(DEADLINE_KINDS);
+const FIELD = {
+  STAY_ENDS: "stayUntil",
+  REPORT_DUE: "nextReportDue",
+  WORK_PERMIT_ENDS: "workPermitUntil",
+} as const;
 
 export const listDeadlinesInput = z.object({
   withinDays: z.number().int().min(0).max(365).default(60),
@@ -98,7 +103,7 @@ export async function syncReminders(tx: Tx, today: string): Promise<void> {
     const clients = await tx.client.findMany({
       where: {
         deletedAt: null,
-        ...(rule.kind === "STAY_ENDS" ? { stayUntil: range } : { nextReportDue: range }),
+        [FIELD[rule.kind]]: range,
       },
       include: { reminders: { where: { kind: rule.kind } } },
     });
@@ -173,7 +178,10 @@ export async function listDeadlines(ctx: Context, raw: z.input<typeof listDeadli
   const today = bangkokToday(ctx.now());
   const range = { gte: parseDateOnly(today), lte: parseDateOnly(addDays(today, withinDays)) };
   const clients = await ctx.db.client.findMany({
-    where: { deletedAt: null, OR: [{ stayUntil: range }, { nextReportDue: range }] },
+    where: {
+      deletedAt: null,
+      OR: [{ stayUntil: range }, { nextReportDue: range }, { workPermitUntil: range }],
+    },
     include: {
       cases: {
         where: { stage: { notIn: ["DONE", "CANCELLED"] } },
@@ -183,7 +191,7 @@ export async function listDeadlines(ctx: Context, raw: z.input<typeof listDeadli
   });
 
   const items = clients.flatMap((client) =>
-    (["STAY_ENDS", "REPORT_DUE"] as const).flatMap((kind) => {
+    DEADLINE_KINDS.flatMap((kind) => {
       const date = deadlineOf(client, kind);
       if (!date) return [];
       const deadline = formatDateOnly(date);

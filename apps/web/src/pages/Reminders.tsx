@@ -396,7 +396,7 @@ export function RemindersPage() {
     <>
       <PageHeader
         title="Reminders"
-        subtitle="Clients get a message before their permission to stay or their 90-day report runs out"
+        subtitle="Clients get a message before their permission to stay, 90-day report or work permit runs out"
       />
       <QueryView query={deadlines} what="reminders">
         {(d) => {

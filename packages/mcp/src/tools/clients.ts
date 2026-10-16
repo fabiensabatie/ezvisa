@@ -19,7 +19,7 @@ export const clientTools = [
     name: "list_clients",
     title: "List clients",
     description:
-      "Lists clients alphabetically, with optional search by name, email, phone or passport number, and a filter for stays or 90-day reports ending soon. Paginated.",
+      "Lists clients alphabetically, with optional search by name, email, phone or passport number, and a filter for stays, 90-day reports or work permits ending soon. Paginated.",
     input: clients.listClientsInput,
     annotations: { readOnlyHint: true },
     visibleTo: canView("clients"),
@@ -48,7 +48,7 @@ export const clientTools = [
     name: "update_client",
     title: "Update a client",
     description:
-      "Updates the given fields only. Pass null to clear a field. After an approved extension or a filed 90-day report, update stayUntil or nextReportDue so reminders follow the new date.",
+      "Updates the given fields only. Pass null to clear a field. After an approved extension, a filed 90-day report or a renewed work permit, update stayUntil, nextReportDue or workPermitUntil so reminders follow the new date.",
     input: clients.updateClientInput,
     annotations: { idempotentHint: true },
     visibleTo: canEdit("clients"),

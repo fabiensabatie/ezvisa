@@ -7,7 +7,7 @@ export const reminderTools = [
     name: "list_deadlines",
     title: "List upcoming deadlines",
     description:
-      "Clients whose permission to stay ends or 90-day report is due soon, with days left and whether a case is already open for it.",
+      "Clients whose permission to stay ends, 90-day report is due or work permit expires soon, with days left and whether a case is already open for it.",
     input: reminders.listDeadlinesInput,
     annotations: { readOnlyHint: true },
     visibleTo: canView("reminders"),
