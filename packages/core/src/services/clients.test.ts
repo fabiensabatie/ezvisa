@@ -1,6 +1,13 @@
 import { createDb, type Db } from "@ezvisa/db";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createTestActor, createTestContext, resetDatabase, testDatabaseUrl } from "../testing.js";
+import {
+  createTestActor,
+  createTestContext,
+  publishSampleTemplate,
+  resetDatabase,
+  testDatabaseUrl,
+} from "../testing.js";
+import { createCase } from "./cases.js";
 import { createClient, deleteClient, getClient, listClients, updateClient } from "./clients.js";
 
 const url = testDatabaseUrl();
@@ -102,5 +109,19 @@ describe.skipIf(!url)("clients service", () => {
     await expect(deleteClient(validator, { clientId: client.id })).rejects.toMatchObject({
       code: "FORBIDDEN",
     });
+  });
+
+  it("refuses to delete a client with open cases unless told to cancel them", async () => {
+    const ctx = await as("Owner");
+    const client = await createClient(ctx, { fullName: "Z", nationality: "TH" });
+    await publishSampleTemplate(ctx);
+    const c = await createCase(ctx, { clientId: client.id, template: "retirement-extension" });
+    await expect(deleteClient(ctx, { clientId: client.id })).rejects.toMatchObject({
+      code: "CONFLICT",
+    });
+    const result = await deleteClient(ctx, { clientId: client.id, cancelOpenCases: true });
+    expect(result).toMatchObject({ deleted: true, cancelledCases: 1 });
+    const row = await db.case.findUniqueOrThrow({ where: { id: c.id } });
+    expect(row).toMatchObject({ stage: "CANCELLED", outcome: "WITHDRAWN" });
   });
 });

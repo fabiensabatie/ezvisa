@@ -123,7 +123,7 @@ function StageAction({ c, onOutcome }: { c: CaseDetail; onOutcome: () => void })
 }
 
 function Header({ c }: { c: CaseDetail }) {
-  const { can } = useCan();
+  const { can, markSubmitted } = useCan();
   const [editing, setEditing] = useState(false);
   const [outcome, setOutcome] = useState(false);
   const [sharing, setSharing] = useState(false);
@@ -145,7 +145,9 @@ function Header({ c }: { c: CaseDetail }) {
           </h1>
           <Chip tone={s.tone}>{s.label}</Chip>
           {c.outcome && (
-            <Chip tone={c.outcome === "APPROVED" ? "ok" : "bad"}>{c.outcome.toLowerCase()}</Chip>
+            <Chip tone={c.outcome === "APPROVED" || c.outcome === "COMPLETED" ? "ok" : "bad"}>
+              {c.outcome === "COMPLETED" ? "done" : c.outcome.toLowerCase()}
+            </Chip>
           )}
         </div>
         <p className="mt-1.5 text-sm text-muted">
@@ -190,6 +192,11 @@ function Header({ c }: { c: CaseDetail }) {
           <Button variant="outline" icon="edit" onClick={() => setEditing(true)}>
             Edit case
           </Button>
+          {!(c.stage === "SUBMISSION" && markSubmitted) && (
+            <Button variant="outline" icon="check" onClick={() => setOutcome(true)}>
+              Close case
+            </Button>
+          )}
           <StageAction c={c} onOutcome={() => setOutcome(true)} />
         </div>
       )}
@@ -283,22 +290,45 @@ const OUTCOMES = [
     label: "More documents needed",
     description: "Back to collecting. Say what they asked for.",
   },
+  {
+    value: "COMPLETED",
+    label: "Done",
+    description: "The work is finished, with no decision to record.",
+  },
+  {
+    value: "WITHDRAWN",
+    label: "Cancelled",
+    description: "The client withdrew. Say why.",
+  },
 ] as const;
+type Outcome = (typeof OUTCOMES)[number]["value"];
+const DECISIONS: Outcome[] = ["APPROVED", "REJECTED", "MORE_DOCUMENTS"];
 
-/** Records what immigration decided on a case in Submission. Also opened from the board. */
+/**
+ * Closes a case: records what immigration decided on a case in Submission, or marks any open
+ * case done or cancelled. Also opened from the board.
+ */
 export function OutcomeDialog({
   c,
   open,
   onClose,
 }: {
-  c: Pick<CaseDetail, "number">;
+  c: Pick<CaseDetail, "number" | "stage">;
   open: boolean;
   onClose: () => void;
 }) {
   const trpc = useTRPC();
+  const { can, markSubmitted, human } = useCan();
   const close = useMutation(trpc.cases.close.mutationOptions({ meta: { quiet: true } }));
-  const [outcome, setOutcome] = useState<(typeof OUTCOMES)[number]["value"]>("APPROVED");
+  const decides = c.stage === "SUBMISSION" && markSubmitted;
+  const options = OUTCOMES.filter((o) =>
+    DECISIONS.includes(o.value)
+      ? decides
+      : can("cases", "edit") && (o.value !== "COMPLETED" || human),
+  );
+  const [outcome, setOutcome] = useState<Outcome>(options[0]?.value ?? "COMPLETED");
   const [note, setNote] = useState("");
+  const needsNote = outcome === "MORE_DOCUMENTS" || outcome === "WITHDRAWN";
 
   return (
     <FormDialog
@@ -307,9 +337,14 @@ export function OutcomeDialog({
         close.reset();
         onClose();
       }}
-      title="Log the outcome"
-      description={`What did Chiang Mai Immigration decide on ${c.number}?`}
-      submitLabel="Save outcome"
+      title={decides ? "Log the outcome" : `Close ${c.number}`}
+      description={
+        decides
+          ? `What did Chiang Mai Immigration decide on ${c.number}?`
+          : "Mark the case done, or cancel it if the client withdrew."
+      }
+      submitLabel={outcome === "WITHDRAWN" ? "Cancel the case" : "Save"}
+      submitVariant={outcome === "WITHDRAWN" ? "danger" : "primary"}
       pending={close.isPending}
       error={close.error ? errorMessage(close.error) : null}
       onSubmit={async () => {
@@ -320,18 +355,29 @@ export function OutcomeDialog({
           toast.success(
             outcome === "MORE_DOCUMENTS"
               ? `${c.number} is back in collecting`
-              : `${c.number} closed: ${outcome.toLowerCase()}`,
+              : outcome === "WITHDRAWN"
+                ? `${c.number} cancelled`
+                : outcome === "COMPLETED"
+                  ? `${c.number} is done`
+                  : `${c.number} closed: ${outcome.toLowerCase()}`,
           );
           onClose();
         }
       }}
     >
-      <RadioCards legend="Outcome" value={outcome} onChange={setOutcome} options={OUTCOMES} />
+      <RadioCards legend="Outcome" value={outcome} onChange={setOutcome} options={options} />
       <TextAreaField
-        label={outcome === "MORE_DOCUMENTS" ? "What did they ask for?" : "Note (optional)"}
-        required={outcome === "MORE_DOCUMENTS"}
+        label={
+          outcome === "MORE_DOCUMENTS"
+            ? "What did they ask for?"
+            : outcome === "WITHDRAWN"
+              ? "Why is it cancelled?"
+              : "Note (optional)"
+        }
+        required={needsNote}
         value={note}
         onChange={(e) => setNote(e.target.value)}
+        hint={outcome === "WITHDRAWN" ? "A cancelled case cannot be reopened." : undefined}
       />
     </FormDialog>
   );

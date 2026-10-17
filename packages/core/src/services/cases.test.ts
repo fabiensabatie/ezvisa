@@ -163,6 +163,16 @@ describe.skipIf(!url)("cases service", () => {
     expect((await listCases(owner, { includeClosed: true })).items[0]?.stage).toBe("CANCELLED");
   });
 
+  it("marks a case done at any stage, by a person only", async () => {
+    const c = await open();
+    await expect(
+      closeCase(assistant, { case: c.number, outcome: "COMPLETED" }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN" });
+    const done = await closeCase(owner, { case: c.number, outcome: "COMPLETED" });
+    expect(done).toMatchObject({ stage: "DONE", outcome: "COMPLETED" });
+    expect(done.closedAt).not.toBeNull();
+  });
+
   it("refuses outcomes before submission", async () => {
     const c = await open();
     await expect(closeCase(runner, { case: c.number, outcome: "APPROVED" })).rejects.toMatchObject({

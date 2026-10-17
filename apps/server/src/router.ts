@@ -137,6 +137,9 @@ export const appRouter = router({
     update: protectedProcedure
       .input(clients.updateClientInput)
       .mutation(({ ctx, input }) => clients.updateClient(ctx.domain, input)),
+    delete: protectedProcedure
+      .input(clients.deleteClientInput)
+      .mutation(({ ctx, input }) => clients.deleteClient(ctx.domain, input)),
   }),
 
   documents: router({

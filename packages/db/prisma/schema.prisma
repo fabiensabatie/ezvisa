@@ -47,6 +47,7 @@ enum CaseOutcome {
   REJECTED
   MORE_DOCUMENTS
   WITHDRAWN
+  COMPLETED
 }
 
 enum ItemKind {

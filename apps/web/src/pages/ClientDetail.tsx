@@ -1,17 +1,18 @@
-import { useQuery } from "@tanstack/react-query";
-import { Link, useParams } from "@tanstack/react-router";
+import { useMutation, useQuery } from "@tanstack/react-query";
+import { Link, useNavigate, useParams } from "@tanstack/react-router";
 import { type ReactNode, useState } from "react";
 import { ClientChatCard } from "../components/ClientChatCard";
 import { ClientDialog } from "../components/ClientDialog";
-import { Button } from "../components/controls";
+import { Button, FormDialog } from "../components/controls";
 import { DocumentList, FileDrop, useDocumentUpload } from "../components/DocumentList";
 import { Icon } from "../components/Icon";
 import { NewCaseDialog } from "../components/NewCaseDialog";
 import { Avatar, Card, CardTitle, Chip, Empty, Label, Progress, QueryView } from "../components/ui";
 import { useCan } from "../lib/can";
 import { countryName, formatDate, formatInstant, relativeDays } from "../lib/format";
+import { toast } from "../lib/toast";
 import { CHANNEL_LABEL, DEADLINE_LABEL, dueTone, stage, TONE } from "../lib/tones";
-import { type Outputs, useTRPC } from "../trpc";
+import { errorMessage, type Outputs, useTRPC } from "../trpc";
 
 type Client = Outputs["clients"]["get"];
 
@@ -19,9 +20,15 @@ function Actions({ c }: { c: Client }) {
   const { can } = useCan();
   const [editing, setEditing] = useState(false);
   const [opening, setOpening] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   if (!can("clients", "edit") && !can("cases", "edit")) return null;
   return (
     <div className="flex w-full flex-wrap items-center justify-end gap-2 border-t border-line pt-4">
+      {can("clients", "full") && (
+        <Button variant="outline" icon="trash" onClick={() => setDeleting(true)}>
+          Delete
+        </Button>
+      )}
       {can("clients", "edit") && (
         <Button variant="outline" icon="edit" onClick={() => setEditing(true)}>
           Edit
@@ -33,12 +40,51 @@ function Actions({ c }: { c: Client }) {
         </Button>
       )}
       {editing && <ClientDialog open client={c} onClose={() => setEditing(false)} />}
+      {deleting && <DeleteClientDialog c={c} onClose={() => setDeleting(false)} />}
       <NewCaseDialog
         open={opening}
         onClose={() => setOpening(false)}
         client={{ id: c.id, fullName: c.fullName }}
       />
     </div>
+  );
+}
+
+function DeleteClientDialog({ c, onClose }: { c: Client; onClose: () => void }) {
+  const trpc = useTRPC();
+  const navigate = useNavigate();
+  const remove = useMutation(trpc.clients.delete.mutationOptions({ meta: { quiet: true } }));
+  const open = c.cases.filter((k) => k.stage !== "DONE" && k.stage !== "CANCELLED");
+  return (
+    <FormDialog
+      open
+      onClose={() => {
+        remove.reset();
+        onClose();
+      }}
+      title={`Delete ${c.fullName}?`}
+      description="The client disappears from lists. Their records are kept until the retention period ends."
+      submitLabel={open.length > 0 ? "Cancel cases and delete" : "Delete client"}
+      submitVariant="danger"
+      pending={remove.isPending}
+      error={remove.error ? errorMessage(remove.error) : null}
+      onSubmit={async () => {
+        const done = await remove
+          .mutateAsync({ clientId: c.id, cancelOpenCases: open.length > 0 })
+          .catch(() => null);
+        if (done) {
+          toast.success(`${c.fullName} deleted`);
+          void navigate({ to: "/clients" });
+        }
+      }}
+    >
+      {open.length > 0 && (
+        <p className={`rounded-2xl px-3.5 py-3 text-sm font-bold ${TONE.warn}`}>
+          {open.length === 1 ? "This open case" : `These ${open.length} open cases`} will be
+          cancelled: {open.map((k) => k.number).join(", ")}.
+        </p>
+      )}
+    </FormDialog>
   );
 }
 

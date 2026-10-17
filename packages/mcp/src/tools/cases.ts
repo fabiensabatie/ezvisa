@@ -62,7 +62,7 @@ export const caseTools = [
     name: "close_case",
     title: "Record an outcome",
     description:
-      "Records the immigration outcome of a case in SUBMISSION: APPROVED or REJECTED closes it, MORE_DOCUMENTS sends it back to COLLECTING. WITHDRAWN cancels a case at any stage. After an approval, update the client's stayUntil or nextReportDue.",
+      "Records the immigration outcome of a case in SUBMISSION: APPROVED or REJECTED closes it, MORE_DOCUMENTS sends it back to COLLECTING. WITHDRAWN cancels a case at any stage. COMPLETED marks a case done at any stage when there is no immigration decision to record (only a person can set it). After an approval, update the client's stayUntil or nextReportDue.",
     input: cases.closeCaseInput,
     annotations: { destructiveHint: true },
     visibleTo: (p: Permissions) => canEdit("cases")(p) || p.markSubmitted,

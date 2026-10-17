@@ -30,11 +30,9 @@ type CaseSummary = CaseList["items"][number];
 
 const BOARD = STAGES.filter((s) => s.key !== "CANCELLED");
 
-/** Where a card may go: any other open stage; Done only from Submission, with an outcome. */
+/** Where a card may go: any other open stage, or Done (which asks how it closed). */
 function canDrop(c: CaseSummary, target: StageKey): boolean {
-  if (target === c.stage) return false;
-  if (target === "DONE") return c.stage === "SUBMISSION";
-  return true;
+  return target !== c.stage;
 }
 
 function CardBody({ c }: { c: CaseSummary }) {
@@ -186,14 +184,10 @@ export function CasesPage() {
     setDragging(null);
     const c = active.data.current?.c as CaseSummary | undefined;
     const target = over?.id as StageKey | undefined;
-    // The board has no Cancelled column: cancelling stays on the case page, with its reason.
+    // The board has no Cancelled column: dropping on Done offers cancelling, with its reason.
     if (!c || !target || target === c.stage || target === "CANCELLED") return;
     if (target === "DONE") {
-      if (c.stage === "SUBMISSION") setClosing(c);
-      else
-        toast.error(
-          "Only a case in Submission can be closed with an outcome. Withdraw it from the case page.",
-        );
+      setClosing(c);
       return;
     }
     // Move it now; put it back if the server refuses (its reason shows as a toast).

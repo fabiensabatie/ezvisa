@@ -100,7 +100,15 @@ export const listClientsInput = z.object({
 });
 
 export const getClientInput = z.object({ clientId: id("Client") });
-export const deleteClientInput = z.object({ clientId: id("Client") });
+export const deleteClientInput = z.object({
+  clientId: id("Client"),
+  cancelOpenCases: z
+    .boolean()
+    .default(false)
+    .describe(
+      "Also cancel (WITHDRAWN) the client's open cases. Otherwise open cases refuse the delete.",
+    ),
+});
 
 const dateOrNull = (value: string | null | undefined) =>
   value === undefined ? undefined : value === null ? null : parseDateOnly(value);
@@ -250,25 +258,42 @@ export async function updateClient(ctx: Context, raw: z.input<typeof updateClien
 
 export async function deleteClient(ctx: Context, raw: z.input<typeof deleteClientInput>) {
   requireLevel(ctx, "clients", "full");
-  const { clientId } = deleteClientInput.parse(raw);
+  const { clientId, cancelOpenCases } = deleteClientInput.parse(raw);
   const client = await findClient(ctx, clientId);
-  const openCases = await ctx.db.case.count({
-    where: { clientId, stage: { notIn: ["DONE", "CANCELLED"] } },
+  const openWhere = {
+    clientId,
+    stage: { notIn: ["DONE", "CANCELLED"] },
+  } satisfies Prisma.CaseWhereInput;
+  const openCases = await ctx.db.case.findMany({
+    where: openWhere,
+    select: { id: true, stage: true },
   });
-  if (openCases > 0) {
+  if (openCases.length > 0 && !cancelOpenCases) {
     throw new DomainError(
       "CONFLICT",
-      `${client.fullName} has ${openCases} open case(s). Close or cancel them first.`,
+      `${client.fullName} has ${openCases.length} open case(s). Close or cancel them first.`,
     );
   }
   return ctx.db.$transaction(async (tx) => {
-    await tx.client.update({ where: { id: clientId }, data: { deletedAt: ctx.now() } });
+    const now = ctx.now();
+    for (const c of openCases) {
+      const data = { stage: "CANCELLED", outcome: "WITHDRAWN", closedAt: now } as const;
+      await tx.case.update({ where: { id: c.id }, data });
+      await audit(tx, ctx, {
+        action: "case.closed",
+        entity: "Case",
+        entityId: c.id,
+        before: { stage: c.stage },
+        after: { ...data, note: "Client deleted" },
+      });
+    }
+    await tx.client.update({ where: { id: clientId }, data: { deletedAt: now } });
     await audit(tx, ctx, {
       action: "client.deleted",
       entity: "Client",
       entityId: clientId,
       before: clientDto(client),
     });
-    return { deleted: true as const, clientId };
+    return { deleted: true as const, clientId, cancelledCases: openCases.length };
   });
 }

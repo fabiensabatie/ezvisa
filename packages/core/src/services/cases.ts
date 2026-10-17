@@ -66,9 +66,9 @@ export const updateCaseItemInput = z.object({
 export const closeCaseInput = z.object({
   case: caseRef,
   outcome: z
-    .enum(["APPROVED", "REJECTED", "MORE_DOCUMENTS", "WITHDRAWN"])
+    .enum(["APPROVED", "REJECTED", "MORE_DOCUMENTS", "WITHDRAWN", "COMPLETED"])
     .describe(
-      "APPROVED or REJECTED closes a submitted case. MORE_DOCUMENTS sends it back to COLLECTING. WITHDRAWN cancels it.",
+      "APPROVED or REJECTED closes a submitted case. MORE_DOCUMENTS sends it back to COLLECTING. WITHDRAWN cancels it. COMPLETED marks it done at any stage, for work with no immigration decision; only a person can set it.",
     ),
   note: z
     .string()
@@ -356,6 +356,9 @@ export async function closeCase(ctx: Context, raw: z.input<typeof closeCaseInput
   }
   if (input.outcome === "WITHDRAWN") {
     requireLevel(ctx, "cases", "edit");
+  } else if (input.outcome === "COMPLETED") {
+    requireLevel(ctx, "cases", "edit");
+    requireHuman(ctx, "mark a case done");
   } else if (!ctx.actor.permissions.markSubmitted) {
     throw new DomainError("FORBIDDEN", `The ${ctx.actor.roleName} role cannot record outcomes.`);
   }
@@ -363,7 +366,11 @@ export async function closeCase(ctx: Context, raw: z.input<typeof closeCaseInput
   return ctx.db.$transaction(async (tx) => {
     const row = await loadCase(tx, input.case);
     assertOpen(row);
-    if (input.outcome !== "WITHDRAWN" && row.stage !== "SUBMISSION") {
+    if (
+      input.outcome !== "WITHDRAWN" &&
+      input.outcome !== "COMPLETED" &&
+      row.stage !== "SUBMISSION"
+    ) {
       throw new DomainError(
         "GUARD_FAILED",
         `${caseNumber(row.number)} is in ${row.stage}. Outcomes are recorded once a case is in SUBMISSION.`,

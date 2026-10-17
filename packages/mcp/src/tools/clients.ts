@@ -58,7 +58,7 @@ export const clientTools = [
     name: "delete_client",
     title: "Delete a client",
     description:
-      "Removes a client from lists. Refused while the client has open cases. Data is kept until the retention period ends.",
+      "Removes a client from lists. Refused while the client has open cases, unless cancelOpenCases is set, which cancels them first. Data is kept until the retention period ends.",
     input: clients.deleteClientInput,
     annotations: { destructiveHint: true },
     visibleTo: canAdminister("clients"),
