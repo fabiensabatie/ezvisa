@@ -38,7 +38,7 @@ export const templateTools = [
   defineTool({
     name: "update_template",
     title: "Update a template",
-    description: `Changes the template's name, description, office or deadline kind, or the draft's known failures and notes. ${DRAFT_NOTE}`,
+    description: `Changes the template's name, description, office, deadline kind or prices, which apply straight away to every version, or the draft's known failures and notes. ${DRAFT_NOTE}`,
     input: templates.updateTemplateInput,
     visibleTo: canEdit("templates"),
     run: (ctx, input) => templates.updateTemplate(ctx, input),

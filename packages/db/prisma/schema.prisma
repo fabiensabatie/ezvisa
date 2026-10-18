@@ -272,6 +272,9 @@ model Template {
   office       String            @default("Chiang Mai Immigration")
   /// Which client deadline a case of this type resolves, for reminders
   deadlineKind DeadlineKind?
+  /// What the agency charges, in THB per person with the government fee included:
+  /// [{ "label": "Single", "amountThb": 2000, "from": false, "note": null }]
+  prices       Json              @default("[]")
   archivedAt   DateTime?
   versions     TemplateVersion[]
   createdAt    DateTime          @default(now())

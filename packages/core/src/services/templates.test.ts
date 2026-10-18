@@ -24,6 +24,7 @@ import {
   readTemplateFile,
   removeTemplateFile,
   reorderTemplateItems,
+  updateTemplate,
   updateTemplateItem,
 } from "./templates.js";
 
@@ -52,6 +53,31 @@ describe.skipIf(!url)("templates service", () => {
     ).rejects.toMatchObject({
       code: "CONFLICT",
     });
+  });
+
+  it("keeps prices on the template, for every version, without starting a draft", async () => {
+    await publishSampleTemplate(owner);
+    const updated = await updateTemplate(owner, {
+      template: "retirement-extension",
+      prices: [
+        { label: "1-year extension", amountThb: 9900 },
+        { label: "Package", amountThb: 18000, from: true, note: "On quote" },
+      ],
+    });
+    expect(updated.draft).toBeNull();
+    expect(updated.prices).toEqual([
+      { label: "1-year extension", amountThb: 9900, from: false, note: null },
+      { label: "Package", amountThb: 18000, from: true, note: "On quote" },
+    ]);
+    const read = await getTemplate(owner, { template: "retirement-extension" });
+    expect(read.prices).toHaveLength(2);
+
+    await expect(
+      updateTemplate(owner, {
+        template: "retirement-extension",
+        prices: [{ label: "Bad", amountThb: -1 }],
+      }),
+    ).rejects.toThrow();
   });
 
   it("edits a draft copied from the published version without touching open cases", async () => {

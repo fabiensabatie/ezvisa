@@ -25,6 +25,26 @@ const rules = z
   .record(z.string(), z.unknown())
   .describe('Machine-checkable rules, e.g. {"maxAgeDays": 7} for a bank letter');
 
+const prices = z
+  .array(
+    z.object({
+      label: z
+        .string()
+        .trim()
+        .min(1)
+        .max(120)
+        .describe('What this price covers, e.g. "Single entry" or "Standard"'),
+      amountThb: z.number().int().min(0).max(10_000_000),
+      from: z
+        .boolean()
+        .default(false)
+        .describe("True for a starting price, when the final one is quoted per case"),
+      note: z.string().trim().max(300).nullable().optional(),
+    }),
+  )
+  .max(20)
+  .describe("Price list in THB per person, government fee included. Replaces the whole list.");
+
 const newItem = z.object({
   label: z.string().trim().min(1).max(200).describe("What the client must provide"),
   description: z.string().trim().max(1000).optional().describe("Details shown to staff and client"),
@@ -64,6 +84,7 @@ export const createTemplateInput = z.object({
   deadlineKind: deadlineKind
     .optional()
     .describe("Which client deadline a case of this type resolves"),
+  prices: prices.optional(),
   knownFailures: z.array(z.string().trim().min(1).max(300)).optional(),
   items: z.array(newItem).optional().describe("Checklist items, in order"),
 });
@@ -73,6 +94,7 @@ export const updateTemplateInput = z.object({
   description: z.string().trim().max(1000).nullable().optional(),
   office: z.string().trim().max(120).optional(),
   deadlineKind: deadlineKind.nullable().optional(),
+  prices: prices.optional(),
   knownFailures: z
     .array(z.string().trim().min(1).max(300))
     .optional()
@@ -326,6 +348,7 @@ export async function createTemplate(ctx: Context, raw: z.input<typeof createTem
         description: input.description,
         office: input.office,
         deadlineKind: input.deadlineKind,
+        prices: input.prices ?? [],
         versions: {
           create: {
             version: 1,

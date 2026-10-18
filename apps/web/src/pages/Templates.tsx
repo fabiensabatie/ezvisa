@@ -20,7 +20,7 @@ import { Icon } from "../components/Icon";
 import { TemplateFileList } from "../components/TemplateFileList";
 import { Card, CardTitle, Chip, Empty, PageHeader, QueryView } from "../components/ui";
 import { useCan } from "../lib/can";
-import { fileSize, formatInstant, plural } from "../lib/format";
+import { fileSize, formatInstant, formatThb, plural } from "../lib/format";
 import { toast } from "../lib/toast";
 import { DEADLINE_LABEL, TONE } from "../lib/tones";
 import { fileProblem, MAX_TEMPLATE_FILE_BYTES, mimeOf, putFile } from "../lib/upload";
@@ -31,6 +31,15 @@ type TemplateItem = Template["selected"]["items"][number];
 type ItemKind = TemplateItem["kind"];
 type FileKind = Template["selected"]["files"][number]["kind"];
 type DeadlineKind = "STAY_ENDS" | "REPORT_DUE" | "WORK_PERMIT_ENDS";
+type Price = Template["prices"][number];
+
+/** The lowest price, shown on the template's card in the list. */
+function startingPrice(prices: Price[]): string | null {
+  const paid = prices.filter((p) => p.amountThb > 0);
+  if (paid.length === 0) return null;
+  const lowest = paid.reduce((a, b) => (b.amountThb < a.amountThb ? b : a));
+  return formatThb(lowest.amountThb, lowest.from || paid.length > 1);
+}
 
 const ITEM_KINDS: ReadonlyArray<{ value: ItemKind; label: string }> = [
   { value: "DOCUMENT", label: "Document from the client" },
@@ -188,6 +197,7 @@ export function TemplatesPage() {
                   </span>
                   <span className="mt-auto flex flex-wrap gap-1.5 border-t border-line pt-3">
                     <Chip tone="accent">{plural(t.itemCount ?? 0, "checklist item")}</Chip>
+                    {startingPrice(t.prices) && <Chip tone="ok">{startingPrice(t.prices)}</Chip>}
                     {t.deadlineKind && <Chip tone="info">{DEADLINE_LABEL[t.deadlineKind]}</Chip>}
                   </span>
                 </Link>
@@ -631,6 +641,164 @@ function Files({ t, editing }: { t: Template; editing: boolean }) {
   );
 }
 
+type PriceRow = { key: number; label: string; amount: string; from: boolean; note: string };
+
+function PricesDialog({ t, onClose }: { t: Template; onClose: () => void }) {
+  const trpc = useTRPC();
+  const update = useMutation(trpc.templates.update.mutationOptions({ meta: { quiet: true } }));
+  const [rows, setRows] = useState<PriceRow[]>(() =>
+    t.prices.map((p, key) => ({
+      key,
+      label: p.label,
+      amount: String(p.amountThb),
+      from: p.from,
+      note: p.note ?? "",
+    })),
+  );
+  const [nextKey, setNextKey] = useState(t.prices.length);
+  const [tried, setTried] = useState(false);
+  const change = (key: number, patch: Partial<PriceRow>) =>
+    setRows((all) => all.map((r) => (r.key === key ? { ...r, ...patch } : r)));
+  const invalid = rows.some(
+    (r) => !r.label.trim() || !/^\d+$/.test(r.amount.replace(/[,\s]/g, "")),
+  );
+
+  return (
+    <FormDialog
+      open
+      onClose={onClose}
+      title="Prices"
+      description="In THB per person, government fee included. Prices change straight away, for every version; open cases are not repriced."
+      submitLabel="Save"
+      pending={update.isPending}
+      error={
+        update.error
+          ? errorMessage(update.error)
+          : tried && invalid
+            ? "Every price needs a label and a whole number of baht."
+            : null
+      }
+      onSubmit={async () => {
+        setTried(true);
+        if (invalid) return;
+        const saved = await update
+          .mutateAsync({
+            template: t.slug,
+            prices: rows.map((r) => ({
+              label: r.label.trim(),
+              amountThb: Number(r.amount.replace(/[,\s]/g, "")),
+              from: r.from,
+              note: nullable(r.note),
+            })),
+          })
+          .catch(() => null);
+        if (saved) {
+          toast.success("Prices saved");
+          onClose();
+        }
+      }}
+    >
+      {rows.length === 0 && <Empty>No prices yet.</Empty>}
+      {rows.map((r, index) => (
+        <fieldset key={r.key} className="flex flex-col gap-3 rounded-2xl border border-line p-4">
+          <legend className="sr-only">Price {index + 1}</legend>
+          <FieldRow>
+            <TextField
+              label="Covers"
+              required
+              maxLength={120}
+              placeholder="e.g. Single entry"
+              value={r.label}
+              onChange={(e) => change(r.key, { label: e.target.value })}
+            />
+            <TextField
+              label="Price (THB)"
+              required
+              inputMode="numeric"
+              placeholder="2000"
+              value={r.amount}
+              onChange={(e) => change(r.key, { amount: e.target.value })}
+            />
+          </FieldRow>
+          <TextField
+            label="Note"
+            maxLength={300}
+            placeholder="e.g. Work permit not included"
+            value={r.note}
+            onChange={(e) => change(r.key, { note: e.target.value })}
+          />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <CheckboxField
+              label="Starting price, quoted per case"
+              checked={r.from}
+              onChange={(from) => change(r.key, { from })}
+            />
+            <Button
+              variant="danger"
+              icon="trash"
+              onClick={() => setRows((all) => all.filter((x) => x.key !== r.key))}
+            >
+              Remove
+            </Button>
+          </div>
+        </fieldset>
+      ))}
+      <Button
+        variant="soft"
+        icon="plus"
+        onClick={() => {
+          setRows((all) => [
+            ...all,
+            { key: nextKey, label: "", amount: "", from: false, note: "" },
+          ]);
+          setNextKey((k) => k + 1);
+        }}
+      >
+        Add a price
+      </Button>
+    </FormDialog>
+  );
+}
+
+function Prices({ t, canEdit }: { t: Template; canEdit: boolean }) {
+  const [editing, setEditing] = useState(false);
+  return (
+    <Card>
+      <CardTitle
+        icon={{ name: "star", tone: "ok" }}
+        sub="THB per person, government fee included."
+        aside={
+          canEdit && (
+            <Button variant="outline" icon="edit" onClick={() => setEditing(true)}>
+              Edit prices
+            </Button>
+          )
+        }
+      >
+        Prices
+      </CardTitle>
+      {t.prices.length === 0 ? (
+        <Empty>No price set.</Empty>
+      ) : (
+        <ul className="flex flex-col divide-y divide-line">
+          {t.prices.map((p) => (
+            <li key={`${p.label}-${p.amountThb}`} className="flex items-baseline gap-3 py-2.5">
+              <span className="min-w-0 flex-1">
+                <span className="block font-bold">{p.label}</span>
+                {p.note && <span className="block text-sm text-muted">{p.note}</span>}
+              </span>
+              <span className="shrink-0 font-extrabold tabular-nums">
+                {p.amountThb === 0 ? "Included" : formatThb(p.amountThb, p.from)}
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {editing && <PricesDialog t={t} onClose={() => setEditing(false)} />}
+    </Card>
+  );
+}
+
 function KnownFailures({ t, editing }: { t: Template; editing: boolean }) {
   const trpc = useTRPC();
   const update = useMutation(trpc.templates.update.mutationOptions());
@@ -869,6 +1037,7 @@ export function TemplateDetailPage() {
               <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)]">
                 <Checklist t={t} editing={editing} />
                 <div className="flex flex-col gap-5">
+                  <Prices t={t} canEdit={canEdit && !t.archived} />
                   <Files t={t} editing={editing} />
                   <KnownFailures t={t} editing={editing} />
                 </div>

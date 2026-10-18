@@ -829,7 +829,7 @@ Each screen matches a frame of the mockup.
 | `/reminders` | Upcoming expiries, schedule, message preview | `reminders.list`, `reminders.markSent` |
 | `/team` | People, roles and permission matrix | `employees.list`, `roles.list` |
 | `/templates` | Template cards | `templates.list` |
-| `/templates/:slug` | Checklist, forms and files (with the fields EzVisa fills), known failures, draft and publish | `templates.get`, template mutations, `forms.template` |
+| `/templates/:slug` | Checklist, forms and files (with the fields EzVisa fills), prices, known failures, draft and publish | `templates.get`, template mutations, `forms.template` |
 | `/settings` | Theme colour, shared inbox (connection, notes every agent reads, pause, usage), tokens (list and revoke), MCP connection details | `settings.*`, `chat.overview`, `tokens.*` |
 
 M2 delivered every screen above in read-only form. M3 adds the write side, each control shown only to roles that can use it:
@@ -840,7 +840,7 @@ M2 delivered every screen above in read-only form. M3 adds the write side, each 
 | Case detail | The next stage in one click ("Start collecting", "Move to drafting", "Send for validation", "Approve the pack", "Log the outcome"); change stage or cancel with a note; edit assignee, due date and notes; per checklist item a one-tap "Verify" or "Upload", and a menu to set any status with its note and documents; upload documents to the case; Forms: "Fill forms", then per form "Review" (the PDF beside its fields, edit, save, "Mark checked") and download; "Share checklist with client": choose how long the link works, copy the link and message, or stop the current link |
 | Clients, client detail | New client, edit, record or withdraw consent, open a case, upload documents, link or unlink a chat conversation |
 | Reminders | Send now, edit the message, copy, mark sent, skip; open a case from a deadline; edit the schedule |
-| Templates, template detail | New template; edit template (the first change starts a draft); add, edit, reorder and remove items, and tick the ones the client uploads; attach forms; per PDF form "Fields": sources, formats and hints, boxes on scans, "Start over"; edit known failures; publish with notes or discard the draft; archive |
+| Templates, template detail | New template; edit template (the first change starts a draft); add, edit, reorder and remove items, and tick the ones the client uploads; attach forms; per PDF form "Fields": sources, formats and hints, boxes on scans, "Start over"; edit prices (THB per person, government fee included; they apply straight away, outside drafts); edit known failures; publish with notes or discard the draft; archive |
 | Team | Add an employee, then create their token; edit; deactivate |
 | Settings | Make a colour the agency colour; the name in messages; pause the agents, edit the notes they all read; create and revoke access tokens |
 | Inbox | Reply, private note, take over, hand to agent, resolve; link the person to a client or (owners) a team member |

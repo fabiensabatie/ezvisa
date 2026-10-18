@@ -80,6 +80,13 @@ export function fileSize(bytes: number): string {
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
 }
 
+const THB = new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 });
+
+/** "2,000 THB", or "from 35,000 THB" for a starting price. */
+export function formatThb(amount: number, from = false): string {
+  return `${from ? "from " : ""}${THB.format(amount)} THB`;
+}
+
 export function initials(name: string): string {
   return name
     .split(/\s+/)

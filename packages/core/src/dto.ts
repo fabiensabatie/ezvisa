@@ -137,6 +137,27 @@ export type TemplateVersionDto = ReturnType<typeof templateVersionDto>;
 
 type VersionWithCount = TemplateVersion & { _count?: { items: number }; items?: unknown[] };
 
+export type TemplatePrice = {
+  label: string;
+  amountThb: number;
+  /** A starting price: the final one is quoted per case */
+  from: boolean;
+  note: string | null;
+};
+
+/** Template.prices is JSON; anything malformed is left out rather than shown wrong. */
+export function templatePricesDto(json: unknown): TemplatePrice[] {
+  if (!Array.isArray(json)) return [];
+  return json.flatMap((p) => {
+    if (typeof p !== "object" || p === null) return [];
+    const { label, amountThb, from, note } = p as Record<string, unknown>;
+    if (typeof label !== "string" || typeof amountThb !== "number") return [];
+    return [
+      { label, amountThb, from: from === true, note: typeof note === "string" ? note : null },
+    ];
+  });
+}
+
 export function templateSummaryDto(t: Template & { versions: VersionWithCount[] }) {
   const published = t.versions.find((v) => v.status === "PUBLISHED");
   const draft = t.versions.find((v) => v.status === "DRAFT");
@@ -148,6 +169,7 @@ export function templateSummaryDto(t: Template & { versions: VersionWithCount[] 
     description: t.description,
     office: t.office,
     deadlineKind: t.deadlineKind,
+    prices: templatePricesDto(t.prices),
     archived: t.archivedAt !== null,
     publishedVersion: published?.version ?? null,
     draftVersion: draft?.version ?? null,
