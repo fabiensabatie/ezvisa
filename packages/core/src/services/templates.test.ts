@@ -15,6 +15,7 @@ import {
   addTemplateItem,
   attachTemplateFile,
   confirmTemplateFileUpload,
+  copyTemplateFile,
   createTemplate,
   createTemplateFileUpload,
   discardTemplateDraft,
@@ -164,6 +165,44 @@ describe.skipIf(!url)("templates service", () => {
       fileId: file?.id ?? "",
     });
     expect(draft3.draft?.files).toHaveLength(0);
+    expect(storage.objects.size).toBe(1);
+  });
+
+  it("copies a form from another template, sharing its object, onto an item", async () => {
+    await publishSampleTemplate(owner);
+    const withFile = await attachTemplateFile(owner, {
+      template: "retirement-extension",
+      name: "TM.7 application",
+      kind: "PDF_FORM",
+      filename: "TM7.pdf",
+      mimeType: "application/pdf",
+      contentBase64: Buffer.from("%PDF-1.7 test").toString("base64"),
+    });
+    const source = withFile.draft?.files[0];
+    await createTemplate(owner, {
+      slug: "retirement-visa",
+      name: "Retirement visa",
+      items: [{ label: "TM.7", kind: "FORM" }],
+    });
+    const target = await getTemplate(owner, { template: "retirement-visa", version: "draft" });
+    const itemId = target.selected.items[0]?.id;
+
+    const copied = await copyTemplateFile(owner, {
+      template: "retirement-visa",
+      fileId: source?.id ?? "",
+      itemId,
+    });
+    const copy = copied.draft?.files[0];
+    expect(copy).toMatchObject({ name: "TM.7 application", kind: "PDF_FORM", sizeBytes: 13 });
+    expect(copy?.id).not.toBe(source?.id);
+    expect(copied.draft?.items[0]?.formFileId).toBe(copy?.id);
+    expect(storage.objects.size).toBe(1);
+    await expect(
+      copyTemplateFile(owner, { template: "retirement-visa", fileId: source?.id ?? "" }),
+    ).rejects.toMatchObject({ code: "CONFLICT" });
+
+    // Removing the copy keeps the object the source still uses.
+    await removeTemplateFile(owner, { template: "retirement-visa", fileId: copy?.id ?? "" });
     expect(storage.objects.size).toBe(1);
   });
 

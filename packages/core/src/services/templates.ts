@@ -158,6 +158,12 @@ export const confirmTemplateFileUploadInput = z.object({
   mimeType: z.string().trim().min(1),
   itemId: attachTemplateFileInput.shape.itemId,
 });
+export const copyTemplateFileInput = z.object({
+  template: templateRef.describe("The template to copy the file to"),
+  fileId: id("Template file").describe("The file to copy, from any template"),
+  name: attachTemplateFileInput.shape.name.optional().describe("Defaults to the file's name"),
+  itemId: attachTemplateFileInput.shape.itemId,
+});
 export const getTemplateFileInput = z.object({
   fileId: id("Template file"),
   case: caseRef
@@ -602,6 +608,47 @@ async function recordTemplateFile(
     ctx.formJobs?.setUpTemplateFile(createdId);
   }
   return result;
+}
+
+/**
+ * Copies a form, letter or reference file from another template onto this one's draft, with
+ * how EzVisa fills it. Like a new draft, the copy shares the stored objects.
+ */
+export async function copyTemplateFile(ctx: Context, raw: z.input<typeof copyTemplateFileInput>) {
+  requireLevel(ctx, "templates", "edit");
+  const input = copyTemplateFileInput.parse(raw);
+  return ctx.db.$transaction(async (tx) => {
+    const source = await tx.templateFile.findUnique({ where: { id: input.fileId } });
+    if (!source) throw notFound("template file", input.fileId);
+    const template = await loadTemplate(tx, input.template);
+    const { draft, itemIds } = await ensureDraft(tx, ctx, template);
+    if (draft.files.some((f) => f.storageKey === source.storageKey)) {
+      throw new DomainError("CONFLICT", `${source.name} is already on ${template.name}.`);
+    }
+    const created = await tx.templateFile.create({
+      data: {
+        versionId: draft.id,
+        name: input.name ?? source.name,
+        kind: source.kind,
+        storageKey: source.storageKey,
+        mimeType: source.mimeType,
+        sizeBytes: source.sizeBytes,
+        fieldMap: (source.fieldMap ?? undefined) as Prisma.InputJsonValue | undefined,
+        fillableKey: source.fillableKey,
+      },
+    });
+    if (input.itemId) {
+      const item = draftItem(draft, itemIds, input.itemId);
+      await tx.templateItem.update({ where: { id: item.id }, data: { formFileId: created.id } });
+    }
+    await audit(tx, ctx, {
+      action: "template.file_copied",
+      entity: "Template",
+      entityId: template.id,
+      after: { fileId: created.id, fromFileId: source.id, name: created.name },
+    });
+    return draftResult(tx, template.id);
+  });
 }
 
 /** A presigned PUT link for a form or letter. Confirm with confirmTemplateFileUpload. */

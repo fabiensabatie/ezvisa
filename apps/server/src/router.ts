@@ -333,6 +333,9 @@ export const appRouter = router({
     fileLink: protectedProcedure
       .input(templates.getTemplateFileInput)
       .mutation(({ ctx, input }) => templates.getTemplateFile(ctx.domain, input)),
+    copyFile: protectedProcedure
+      .input(templates.copyTemplateFileInput)
+      .mutation(({ ctx, input }) => templates.copyTemplateFile(ctx.domain, input)),
     removeFile: protectedProcedure
       .input(templates.removeTemplateFileInput)
       .mutation(({ ctx, input }) => templates.removeTemplateFile(ctx.domain, input)),

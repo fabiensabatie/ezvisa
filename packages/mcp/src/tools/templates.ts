@@ -136,6 +136,14 @@ export const templateTools = [
     },
   }),
   defineTool({
+    name: "copy_template_file",
+    title: "Copy a form or file from another template",
+    description: `Copies a form, letter or reference file from any template onto this one's draft, with its fields and sources as set up there, optionally as the form behind a checklist item (itemId). Nothing is uploaded again. ${DRAFT_NOTE}`,
+    input: templates.copyTemplateFileInput,
+    visibleTo: canEdit("templates"),
+    run: (ctx, input) => templates.copyTemplateFile(ctx, input),
+  }),
+  defineTool({
     name: "remove_template_file",
     title: "Remove a form or file",
     description: `Removes a file from the draft and unlinks it from items. ${DRAFT_NOTE}`,
