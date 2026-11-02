@@ -13,11 +13,13 @@ import { createCase, moveCaseStage } from "./cases.js";
 import { createClient } from "./clients.js";
 import {
   analyzeTemplateForm,
+  caseFormInputs,
   checkCaseForm,
   getCaseForm,
   getTemplateForm,
   listCaseForms,
   prepareCaseForms,
+  requestCaseForms,
   updateCaseForm,
   updateTemplateForm,
 } from "./forms.js";
@@ -495,7 +497,7 @@ describe.skipIf(!url)("forms", () => {
   });
 
   it("sets up forms and fills them in the background when the documents are in", async () => {
-    const preparer = new FormPreparer({ db, storage, ai, now: owner.now });
+    const preparer = new FormPreparer({ db, storage, ai, now: owner.now, fillWithClaude: true });
     const jobs = { ...owner, formJobs: preparer };
     const { fileId, kase } = await caseWithForm(await fillableForm(), jobs);
     await preparer.idle();
@@ -540,5 +542,82 @@ describe.skipIf(!url)("forms", () => {
     await moveCaseStage({ ...staff, formJobs: preparer }, { case: kase.number, stage: "DRAFTING" });
     await preparer.idle();
     expect(await db.auditLog.count({ where: { action: "case_form.prepared" } })).toBe(2);
+  });
+
+  it("fills from the records only in the background unless told to use Claude", async () => {
+    const preparer = new FormPreparer({ db, storage, ai, now: owner.now });
+    const { fileId, kase, client } = await caseWithForm(await fillableForm());
+    await analyzeTemplateForm(owner, { fileId });
+    await addPassport(client.id, kase.id);
+    await moveCaseStage({ ...staff, formJobs: preparer }, { case: kase.number, stage: "DRAFTING" });
+    await preparer.idle();
+    expect(ai.calls.filter((c) => c.startsWith("read") || c === "fill")).toEqual([]);
+    const values = await pdfOf(kase.id);
+    expect(values).toMatchObject({ full_name: "JO MAUPAS", passport_no: "FR123456" });
+    expect(values.birth_place ?? "").toBe("");
+
+    // A person clicking Fill forms has Claude read the documents for the rest.
+    await requestCaseForms({ ...staff, formJobs: preparer }, { case: kase.number });
+    await preparer.idle();
+    expect(ai.calls).toContain("read passport.pdf");
+    expect(ai.calls).toContain("fill");
+    expect((await pdfOf(kase.id)).birth_place).toBe("Lyon");
+  });
+
+  it("hands an outside assistant what is left to fill, and keeps where it read each value", async () => {
+    const { fileId, kase, client } = await caseWithForm(await fillableForm());
+    await analyzeTemplateForm(owner, { fileId });
+    const calls = ai.calls.length;
+    const doc = await addPassport(client.id, kase.id);
+    const passportItem = await db.caseItem.findFirstOrThrow({
+      where: { caseId: kase.id, label: "Passport" },
+    });
+    await db.document.update({
+      where: { id: doc.id },
+      data: { caseItemId: passportItem.id, extracted: { document: "Passport", Sex: "F" } },
+    });
+
+    await prepareCaseForms(assistant, { case: kase.number }, { claude: false, setUp: false });
+    expect(ai.calls).toHaveLength(calls);
+
+    const inputs = await caseFormInputs(assistant, { case: kase.number });
+    const form = inputs.forms[0];
+    expect(form?.toFill.map((f) => [f.name, f.label, f.source])).toEqual([
+      ["birth_place", "Place of birth", "documents"],
+      ["married", "Married", "documents"],
+    ]);
+    expect(form?.toFill[0]?.hint).toBe("As on the passport");
+    expect(form?.filledFromRecords.map((f) => f.name)).toEqual([
+      "full_name",
+      "passport_no",
+      "birth_date",
+    ]);
+    expect(form?.forTheTeam).toEqual([{ name: "signature", label: "Signature" }]);
+    expect(inputs.client).toMatchObject({ fullName: "Jo Maupas", dateOfBirth: "1960-04-02" });
+    const passport = inputs.checklist.find((i) => i.label === "Passport");
+    expect(passport?.documents).toEqual([
+      expect.objectContaining({
+        id: doc.id,
+        filename: "passport.pdf",
+        facts: { document: "Passport", Sex: "F" },
+      }),
+    ]);
+    expect(inputs.steps.length).toBeGreaterThan(0);
+
+    const saved = await updateCaseForm(assistant, {
+      case: kase.number,
+      fileId,
+      values: { birth_place: { value: "Lyon", from: "Passport" }, married: false },
+    });
+    const byName = Object.fromEntries(saved.fields.map((f) => [f.name, f]));
+    expect(byName.birth_place).toMatchObject({ value: "Lyon", by: "agent", from: "Passport" });
+    expect(byName.married).toMatchObject({ value: false, by: "agent" });
+    expect((await pdfOf(kase.id)).birth_place).toBe("Lyon");
+
+    // What the assistant filled stays listed, to revise; what a person entered does not.
+    await updateCaseForm(staff, { case: kase.number, fileId, values: { married: true } });
+    const after = await caseFormInputs(assistant, { case: kase.number, fileId });
+    expect(after.forms[0]?.toFill.map((f) => [f.name, f.value])).toEqual([["birth_place", "Lyon"]]);
+    expect(after.forms[0]?.byPeople).toEqual([{ name: "married", label: "Married", value: true }]);
   });
 });

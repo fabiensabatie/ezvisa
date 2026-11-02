@@ -546,8 +546,9 @@ export async function listCaseForms(ctx: Context, raw: z.input<typeof caseFormsI
 }
 
 /**
- * Starts filling the case's forms in the background and returns where they stand; check
- * back with listCaseForms. Without a background runner (tests, scripts) it fills them here.
+ * A person's Fill forms in the dashboard: starts filling the case's forms in the background,
+ * with Claude reading the documents for what the records lack, and returns where they stand;
+ * check back with listCaseForms. Without a background runner (tests, scripts) it fills them here.
  */
 export async function requestCaseForms(ctx: Context, raw: z.input<typeof caseFormsInput>) {
   requireLevel(ctx, "cases", "edit");
@@ -558,7 +559,7 @@ export async function requestCaseForms(ctx: Context, raw: z.input<typeof caseFor
   if (kase.stage === "DONE" || kase.stage === "CANCELLED") {
     throw new DomainError("CONFLICT", `${caseNumber(kase.number)} is closed.`);
   }
-  ctx.formJobs.prepareCase(kase.id);
+  ctx.formJobs.prepareCase(kase.id, { claude: true });
   return listCaseForms(ctx, input);
 }
 
@@ -674,6 +675,17 @@ function sameValues(a: Values, b: Values): boolean {
   );
 }
 
+export type PrepareOptions = {
+  /**
+   * Whether EzVisa's own Claude reads the documents and fills the rest (API cost on the
+   * agency's key). Off, only the records are copied and the rest is left for whoever fills
+   * the form over MCP, with caseFormInputs. Default on; the background runner and MCP turn it off.
+   */
+  claude?: boolean;
+  /** Whether forms not set up yet are set up first (Claude, for a flat PDF). Default on. */
+  setUp?: boolean;
+};
+
 /**
  * Fills the case's forms: values from the client record and the case first, then, with Claude,
  * the rest from what it reads on the client's documents. Values a person entered are kept.
@@ -682,16 +694,25 @@ function sameValues(a: Values, b: Values): boolean {
 export async function prepareCaseForms(
   ctx: Context,
   raw: z.input<typeof caseFormsInput> & { fileId?: string },
+  options: PrepareOptions = {},
 ) {
   requireLevel(ctx, "cases", "edit");
   const input = caseFormsInput.extend({ fileId: id("Template file").optional() }).parse(raw);
+  const claude = options.claude ?? true;
   let kase = await loadCase(ctx, input.case);
+  if (kase.stage === "DONE" || kase.stage === "CANCELLED") {
+    throw new DomainError("CONFLICT", `${caseNumber(kase.number)} is closed.`);
+  }
   const files = formFiles(kase).filter((f) => !input.fileId || f.id === input.fileId);
   if (input.fileId && files.length === 0) {
     throw notFound("form on this case's template", input.fileId);
   }
   const notSetUp = files.filter((f) => !fieldMapOf(f));
-  if (notSetUp.length && hasLevel(ctx.actor.permissions, "templates", "edit")) {
+  if (
+    notSetUp.length &&
+    (options.setUp ?? true) &&
+    hasLevel(ctx.actor.permissions, "templates", "edit")
+  ) {
     for (const f of notSetUp) {
       try {
         await analyzeTemplateForm(ctx, { fileId: f.id });
@@ -716,7 +737,7 @@ export async function prepareCaseForms(
     today,
   };
   const known = await caseFacts(ctx, kase);
-  const documents = await readDocuments(ctx, known.documents);
+  const documents = claude ? await readDocuments(ctx, known.documents) : known.documents;
   const facts = {
     client: {
       fullName: kase.client.fullName,
@@ -769,7 +790,7 @@ export async function prepareCaseForms(
       if (field.source !== null) toAsk.push(field);
       if (kept) values[field.name] = kept;
     }
-    if (toAsk.length && ctx.forms) {
+    if (toAsk.length && ctx.forms && claude) {
       const answers = await ctx.forms.fillFields(
         file.name,
         toAsk.map((f) => ({
@@ -825,6 +846,142 @@ export async function prepareCaseForms(
   return { ...(await listCaseForms(ctx, { case: input.case })), results };
 }
 
+export const caseFormInputsInput = caseFormsInput.extend({
+  fileId: id("Template file")
+    .optional()
+    .describe("Only this form; every form of the case when left out"),
+});
+
+/** What a document says, as recorded with update_document, without EzVisa's own marks. */
+function factsOf(d: { extracted: unknown }): Record<string, unknown> | null {
+  const facts = d.extracted as Record<string, unknown> | null;
+  return facts && typeof facts === "object" && !Array.isArray(facts) ? facts : null;
+}
+
+const FILL_STEPS = [
+  "Values from the client and case records are already filled; a person's values are never overwritten.",
+  "For each field under toFill, find its value in the facts below or on the documents: open a document with read_document (its id), and record what you read on it with update_document so the next fill can reuse it without reading it again.",
+  "Read the template's reference files (read_template_file with fileId and case) when a hint or the checklist points to them.",
+  'Save the values with update_case_form, as { "field_name": { "value": "...", "from": "Passport" } }. Dates as YYYY-MM-DD are formatted for the field; checkboxes true or false.',
+  "Leave a field empty rather than guess. Leave every field under forTheTeam (signatures, official use) alone.",
+  "Read the result over with read_case_form. The form stays a draft until a person checks it with check_case_form.",
+];
+
+/**
+ * Everything needed to fill a case's forms by hand or from an outside assistant, with no
+ * Claude call on EzVisa's side: each form's fields still empty, the client and case records,
+ * the checklist with its documents and what was already read on them, and the template's
+ * reference files.
+ */
+export async function caseFormInputs(ctx: Context, raw: z.input<typeof caseFormInputsInput>) {
+  requireLevel(ctx, "cases", "view");
+  const input = caseFormInputsInput.parse(raw);
+  const kase = await loadCase(ctx, input.case);
+  const files = formFiles(kase).filter((f) => !input.fileId || f.id === input.fileId);
+  if (input.fileId && files.length === 0) {
+    throw notFound("form on this case's template", input.fileId);
+  }
+  const { agentName } = await readPublicSettings(ctx.db);
+  const known = await caseFacts(ctx, kase);
+  const seesDocuments = hasLevel(ctx.actor.permissions, "documents", "view");
+  const documentOf = (d: (typeof known.documents)[number]) => ({
+    id: d.id,
+    filename: d.filename,
+    mimeType: d.mimeType,
+    sizeBytes: d.sizeBytes,
+    received: formatDateOnly(d.createdAt),
+    facts: factsOf(d),
+  });
+  const items = [...kase.items].sort((a, b) => a.position - b.position);
+  const formFileIds = new Set(formFiles(kase).map((f) => f.id));
+
+  return {
+    case: caseNumber(kase.number),
+    stage: kase.stage,
+    steps: FILL_STEPS,
+    forms: files.map((file) => {
+      const map = fieldMapOf(file);
+      const form = kase.forms.find((f) => f.templateFileId === file.id);
+      const values = (form?.values ?? {}) as Values;
+      const fields = map?.fields ?? [];
+      const describe = (f: FormField) => ({
+        name: f.name,
+        label: f.label,
+        type: f.type,
+        options: f.options ?? null,
+        format: f.format,
+        formatLabel: FORMATS.find((x) => x.key === f.format)?.label ?? f.format,
+        hint: f.hint,
+        page: f.page + 1,
+        source: f.source === "ai" ? "documents" : f.source ? sourceLabel(f.source) : null,
+        value: values[f.name]?.value ?? null,
+        by: values[f.name]?.by ?? null,
+      });
+      return {
+        ...summarize(file, form),
+        toFill: fields
+          .filter((f) => f.source !== null && values[f.name]?.by !== "person")
+          .filter((f) => !filledIn(values[f.name]) || values[f.name]?.by === "agent")
+          .map(describe),
+        filledFromRecords: fields
+          .filter((f) => values[f.name]?.by === "source" && filledIn(values[f.name]))
+          .map((f) => ({ name: f.name, label: f.label, value: values[f.name]?.value ?? null })),
+        byPeople: fields
+          .filter((f) => values[f.name]?.by === "person")
+          .map((f) => ({ name: f.name, label: f.label, value: values[f.name]?.value ?? null })),
+        forTheTeam: fields
+          .filter((f) => f.source === null)
+          .map((f) => ({ name: f.name, label: f.label })),
+        setUp: map
+          ? null
+          : "Not set up for filling yet: set it up on the template (set_up_template_form) first.",
+      };
+    }),
+    client: {
+      fullName: kase.client.fullName,
+      nationality: kase.client.nationality,
+      passportNo: kase.client.passportNo,
+      dateOfBirth: kase.client.dateOfBirth ? formatDateOnly(kase.client.dateOfBirth) : null,
+      email: kase.client.email,
+      phone: kase.client.phone,
+      address: kase.client.address,
+      visaType: kase.client.visaType,
+      stayUntil: kase.client.stayUntil ? formatDateOnly(kase.client.stayUntil) : null,
+      notes: kase.client.notes,
+    },
+    caseRecord: {
+      service: kase.templateVersion.template.name,
+      office: kase.templateVersion.template.office,
+      dueDate: kase.dueDate ? formatDateOnly(kase.dueDate) : null,
+    },
+    agency: agentName,
+    today: bangkokToday(ctx.now()),
+    otherCases: known.otherCases,
+    checklist: items.map((item) => ({
+      id: item.id,
+      label: item.label,
+      kind: item.kind,
+      required: item.required,
+      status: item.status,
+      note: item.note,
+      documents: seesDocuments
+        ? known.documents.filter((d) => d.caseItemId === item.id).map(documentOf)
+        : [],
+    })),
+    otherDocuments: seesDocuments
+      ? known.documents
+          .filter((d) => !d.caseItemId || !items.some((i) => i.id === d.caseItemId))
+          .map((d) => ({ ...documentOf(d), case: d.caseId === kase.id ? "this case" : "earlier" }))
+      : [],
+    referenceFiles: kase.templateVersion.files
+      .filter((f) => !formFileIds.has(f.id))
+      .map((f) => ({ fileId: f.id, name: f.name, kind: f.kind, mimeType: f.mimeType })),
+    ...(seesDocuments
+      ? {}
+      : { documentsHidden: "Your role cannot read documents: fill only from the records." }),
+  };
+}
+
 /** A filled form: every field with its value and who filled it, and links to the PDF. */
 export async function getCaseForm(ctx: Context, raw: z.input<typeof caseFormInput>) {
   requireLevel(ctx, "cases", "view");
@@ -870,11 +1027,28 @@ export async function getCaseForm(ctx: Context, raw: z.input<typeof caseFormInpu
   };
 }
 
+const fieldValue = z.union([z.string().max(2000), z.boolean(), z.null()]);
+
 export const updateCaseFormInput = caseFormInput.extend({
   values: z
-    .record(z.string(), z.union([z.string().max(2000), z.boolean(), z.null()]))
+    .record(
+      z.string(),
+      z.union([
+        fieldValue,
+        z.object({
+          value: fieldValue,
+          from: z
+            .string()
+            .trim()
+            .min(1)
+            .max(200)
+            .optional()
+            .describe('What the value was read from, e.g. "Passport" or "Bank letter"'),
+        }),
+      ]),
+    )
     .describe(
-      "Field name → value. Text as written on the form; checkboxes true/false; null clears.",
+      "Field name → value, or { value, from } to say where you read it. Text as written on the form; checkboxes true/false; null clears.",
     ),
 });
 
@@ -898,8 +1072,10 @@ export async function updateCaseForm(ctx: Context, raw: z.input<typeof updateCas
   const form = kase.forms.find((f) => f.templateFileId === file.id);
   const values = { ...((form?.values ?? {}) as Values) };
   const by = ctx.actor.kind === "HUMAN" ? "person" : "agent";
-  for (const [name, value] of Object.entries(input.values)) {
-    values[name] = { value, by, from: ctx.actor.name };
+  for (const [name, entry] of Object.entries(input.values)) {
+    const given = entry !== null && typeof entry === "object" ? entry : { value: entry };
+    const from = by === "agent" && "from" in given && given.from ? given.from : ctx.actor.name;
+    values[name] = { value: given.value, by, from };
   }
   const pdfKey = await render(ctx, kase, file, map.fields, values);
   await ctx.db.$transaction(async (tx) => {

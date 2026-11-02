@@ -40,8 +40,11 @@ export type Context = {
 
 /** Background form work, started by the services and run by the server. */
 export type FormJobs = {
-  /** The case's documents are in, or it moved to drafting: fill its forms. */
-  prepareCase(caseId: string): void;
+  /**
+   * The case's documents are in, or it moved to drafting: fill its forms from the records.
+   * With claude (a person clicked Fill forms), Claude also reads the documents for the rest.
+   */
+  prepareCase(caseId: string, options?: { claude?: boolean }): void;
   /** A PDF form or letter was attached to a template: make it fillable. */
   setUpTemplateFile(fileId: string): void;
   /** Whether the case's forms are being filled right now. */
