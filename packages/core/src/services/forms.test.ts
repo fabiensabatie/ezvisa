@@ -19,6 +19,7 @@ import {
   getTemplateForm,
   listCaseForms,
   prepareCaseForms,
+  requestCaseForms,
   updateCaseForm,
   updateTemplateForm,
 } from "./forms.js";
@@ -554,6 +555,13 @@ describe.skipIf(!url)("forms", () => {
     const values = await pdfOf(kase.id);
     expect(values).toMatchObject({ full_name: "JO MAUPAS", passport_no: "FR123456" });
     expect(values.birth_place ?? "").toBe("");
+
+    // A person clicking Fill forms has Claude read the documents for the rest.
+    await requestCaseForms({ ...staff, formJobs: preparer }, { case: kase.number });
+    await preparer.idle();
+    expect(ai.calls).toContain("read passport.pdf");
+    expect(ai.calls).toContain("fill");
+    expect((await pdfOf(kase.id)).birth_place).toBe("Lyon");
   });
 
   it("hands an outside assistant what is left to fill, and keeps where it read each value", async () => {

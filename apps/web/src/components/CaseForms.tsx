@@ -71,7 +71,7 @@ export function CaseForms({ c }: { c: CaseDetail }) {
     <Card>
       <CardTitle
         icon={{ name: "file" }}
-        sub="EzVisa fills them from the client's record once everything asked is in; your assistant fills the rest from the documents over MCP. A person checks each one."
+        sub="EzVisa fills them from the client's record once everything asked is in. Fill forms has Claude read the documents for the rest. A person checks each one."
         aside={
           canFill && (
             <Button
@@ -165,7 +165,7 @@ function whoFilled(f: FormField): string {
   if (f.by === "agent") return `Assistant${f.from ? `, from ${f.from}` : ""}`;
   if (f.by === "source") return `From the record: ${f.from ?? ""}`.trim();
   if (f.source === null) return "For the team";
-  if (f.source === "ai") return "To read from the documents";
+  if (f.source === "ai") return "Not found on the documents yet";
   return "Not on the record";
 }
 

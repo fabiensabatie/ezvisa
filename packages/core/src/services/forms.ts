@@ -546,8 +546,9 @@ export async function listCaseForms(ctx: Context, raw: z.input<typeof caseFormsI
 }
 
 /**
- * Starts filling the case's forms in the background and returns where they stand; check
- * back with listCaseForms. Without a background runner (tests, scripts) it fills them here.
+ * A person's Fill forms in the dashboard: starts filling the case's forms in the background,
+ * with Claude reading the documents for what the records lack, and returns where they stand;
+ * check back with listCaseForms. Without a background runner (tests, scripts) it fills them here.
  */
 export async function requestCaseForms(ctx: Context, raw: z.input<typeof caseFormsInput>) {
   requireLevel(ctx, "cases", "edit");
@@ -558,7 +559,7 @@ export async function requestCaseForms(ctx: Context, raw: z.input<typeof caseFor
   if (kase.stage === "DONE" || kase.stage === "CANCELLED") {
     throw new DomainError("CONFLICT", `${caseNumber(kase.number)} is closed.`);
   }
-  ctx.formJobs.prepareCase(kase.id);
+  ctx.formJobs.prepareCase(kase.id, { claude: true });
   return listCaseForms(ctx, input);
 }
 
