@@ -2,7 +2,10 @@ import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import fontkit from "@pdf-lib/fontkit";
 import {
+  type AppearanceProviderFor,
+  defaultTextFieldAppearanceProvider,
   degrees,
+  drawTextField,
   PDFCheckBox,
   PDFDocument,
   PDFDropdown,
@@ -11,6 +14,7 @@ import {
   PDFOptionList,
   PDFRadioGroup,
   PDFTextField,
+  rgb,
 } from "pdf-lib";
 
 /** A field of a PDF form, in PDF points with the origin at the bottom left of its page. */
@@ -167,14 +171,61 @@ export async function addFields(bytes: Uint8Array, fields: PdfField[]): Promise<
 
 export type FillValue = string | boolean | null | undefined;
 
-/** Fits text in a field: a smaller size for long values in single-line fields. */
+/**
+ * Fits text in a field: about 85% of the box's height, as large as a hand would write on the
+ * line, and smaller for long values in single-line fields.
+ */
 function fitSize(font: PDFFont, text: string, width: number, height: number): number {
-  const max = Math.min(11, Math.max(6, height * 0.7));
+  const max = Math.min(12, Math.max(6, height * 0.85));
   for (let size = max; size > 5; size -= 0.5) {
     if (font.widthOfTextAtSize(text, size) <= width - 4) return size;
   }
   return 5;
 }
+
+/** Sarabun's capital height, as a share of the font size. */
+const CAP_HEIGHT = 0.7;
+/** The lowest a baseline sits above the box's bottom: boxes EzVisa adds start 2pt under the line. */
+const MIN_BASELINE = 3;
+
+/**
+ * Draws a single-line value standing on its line rather than centred in the box: pdf-lib
+ * centres Sarabun by its tall Thai ascent, which drops Latin text through the printed dots.
+ * Multiline, combed and turned fields keep pdf-lib's drawing.
+ */
+const onTheLine: AppearanceProviderFor<PDFTextField> = (field, widget, font) => {
+  // Also sets the field's default appearance (font and size), for viewers that redraw it.
+  const fallback = defaultTextFieldAppearanceProvider(field, widget, font);
+  const turned = (widget.getAppearanceCharacteristics()?.getRotation() ?? 0) % 360 !== 0;
+  if (field.isMultiline() || field.isCombed() || turned) return fallback;
+  const text = field.getText() ?? "";
+  const { width, height } = widget.getRectangle();
+  const size = fitSize(font, text, width, height);
+  const textWidth = font.widthOfTextAtSize(text, size);
+  const padding = 2;
+  const alignment = field.getAlignment();
+  const x =
+    alignment === 1
+      ? (width - textWidth) / 2
+      : alignment === 2
+        ? width - padding - textWidth
+        : padding;
+  const y = Math.max(MIN_BASELINE, (height - size * CAP_HEIGHT) / 2);
+  return drawTextField({
+    x: 0,
+    y: 0,
+    width,
+    height,
+    borderWidth: 0,
+    padding: 0,
+    color: undefined,
+    borderColor: undefined,
+    textColor: rgb(0, 0, 0),
+    font: font.name,
+    fontSize: size,
+    textLines: [{ encoded: font.encodeText(text), x, y }],
+  });
+};
 
 /**
  * Fills a fillable PDF. Text is drawn in Sarabun, so Thai and Latin both show; the fields
@@ -208,6 +259,9 @@ export async function fillPdf(
     } else if (field instanceof PDFDropdown || field instanceof PDFOptionList) {
       if (typeof value === "string" && field.getOptions().includes(value)) field.select(value);
     }
+  }
+  for (const field of form.getFields()) {
+    if (field instanceof PDFTextField) field.updateAppearances(font, onTheLine);
   }
   form.updateFieldAppearances(font);
   return doc.save();
