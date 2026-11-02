@@ -48,10 +48,24 @@ export const formTools = [
   defineTool({
     name: "prepare_case_forms",
     title: "Fill a case's forms",
-    description: `Fills the case's forms in the background: values from the client and case records, then the rest from what Claude reads on the client's documents. Values a person entered are kept. Runs by itself when the client has sent every document asked and when the case moves to DRAFTING. Check back with list_case_forms (preparing turns false). ${CHECK_NOTE}`,
-    input: forms.caseFormsInput,
+    description: `Fills the case's forms from the client and case records right away, with no Claude call on EzVisa's side, and returns what is left for you to fill: per form, the fields under toFill with their label, hint and format, then the client record, the checklist with its documents (ids for read_document) and what was already read on each, and the template's reference files. Read the documents, then save the values with update_case_form. Values a person entered are kept. Pass fileId for one form. ${CHECK_NOTE}`,
+    input: forms.caseFormInputsInput,
     visibleTo: canEdit("cases"),
-    run: (ctx, input) => forms.requestCaseForms(ctx, input),
+    run: async (ctx, input) => {
+      // EzVisa's own Claude stays out of it: the assistant calling the tool fills the rest.
+      await forms.prepareCaseForms(ctx, input, { claude: false, setUp: false });
+      return forms.caseFormInputs(ctx, input);
+    },
+  }),
+  defineTool({
+    name: "get_case_form_inputs",
+    title: "Get what a case's forms need",
+    description:
+      "Everything to fill a case's forms yourself, without changing them: per form, the fields still to fill (toFill) with label, hint, format and options, those filled from the records or by a person, and those left for the team; the client and case records; the checklist items with their documents (ids for read_document) and the facts already read on each; the client's other documents; and the template's reference files (read_template_file with case). Pass fileId for one form.",
+    input: forms.caseFormInputsInput,
+    annotations: { readOnlyHint: true },
+    visibleTo: canView("cases"),
+    run: (ctx, input) => forms.caseFormInputs(ctx, input),
   }),
   defineTool({
     name: "get_case_form",
@@ -88,7 +102,7 @@ export const formTools = [
   defineTool({
     name: "update_case_form",
     title: "Edit a filled form",
-    description: `Sets values on a case's form by field name and makes a new PDF. Text as it should appear (dates already formatted by the field's format are kept as written; YYYY-MM-DD is formatted for you), checkboxes true or false, null to clear. ${CHECK_NOTE}`,
+    description: `Sets values on a case's form by field name and makes a new PDF. Each value plain, or as { value, from } naming the document you read it on (shown to the person checking). Text as it should appear (dates already formatted by the field's format are kept as written; YYYY-MM-DD is formatted for you), checkboxes true or false, null to clear. ${CHECK_NOTE}`,
     input: forms.updateCaseFormInput,
     visibleTo: canEdit("cases"),
     run: (ctx, input) => forms.updateCaseForm(ctx, input),

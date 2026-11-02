@@ -5,6 +5,7 @@ import {
   chatModelsFromEnv,
   FormPreparer,
   formAiFromEnv,
+  formFillWithClaudeFromEnv,
   LocalDiskStorage,
   loadRootEnv,
   S3Storage,
@@ -88,7 +89,10 @@ const push = new WebPushSender(db, vapidSubject(publicUrl));
 
 // Forms: Claude makes template PDFs fillable and fills each case's copy for a person to check.
 const forms = formAiFromEnv();
-const formJobs = storage ? new FormPreparer({ db, storage, ai: forms }) : null;
+// Case fills copy the records only, unless FORMS_FILL_WITH_CLAUDE is on: the rest is filled over
+// MCP by the team's own assistant, so it costs nothing on the agency's key.
+const fillWithClaude = formFillWithClaudeFromEnv();
+const formJobs = storage ? new FormPreparer({ db, storage, ai: forms, fillWithClaude }) : null;
 
 // The shared inbox and its agents. Both need Chatwoot; answering needs a public URL too.
 const chat = chatFromEnv();
@@ -115,7 +119,9 @@ console.log(
     model: Boolean(process.env.ANTHROPIC_API_KEY?.trim()),
   }),
 );
-console.log(JSON.stringify({ level: "info", msg: "forms", claude: forms?.name ?? null }));
+console.log(
+  JSON.stringify({ level: "info", msg: "forms", claude: forms?.name ?? null, fillWithClaude }),
+);
 
 const app = createApp({
   db,

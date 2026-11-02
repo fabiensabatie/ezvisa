@@ -59,7 +59,12 @@ export * from "./dates.js";
 export * from "./dto.js";
 export { loadRootEnv } from "./env.js";
 export { DomainError, type ErrorCode, isDomainError } from "./errors.js";
-export { ClaudeFormAi, type FormAi, formAiFromEnv } from "./forms/ai.js";
+export {
+  ClaudeFormAi,
+  type FormAi,
+  formAiFromEnv,
+  formFillWithClaudeFromEnv,
+} from "./forms/ai.js";
 export { FormPreparer } from "./forms/preparer.js";
 export { FORMATS, SOURCES } from "./forms/sources.js";
 export { runDailyJob } from "./jobs.js";

@@ -297,6 +297,11 @@ For each blank, give its anchor: the item it belongs to. Most blanks follow thei
 }
 
 /** Claude from ANTHROPIC_API_KEY, model FORMS_MODEL (Claude Opus 5.5 by default). Null without a key. */
+/** FORMS_FILL_WITH_CLAUDE=true has the background fill read documents with Claude too. */
+export function formFillWithClaudeFromEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  return /^(1|true|yes|on)$/i.test(env.FORMS_FILL_WITH_CLAUDE?.trim() ?? "");
+}
+
 export function formAiFromEnv(env: NodeJS.ProcessEnv = process.env): FormAi | null {
   const key = env.ANTHROPIC_API_KEY?.trim();
   return key ? new ClaudeFormAi(key, env.FORMS_MODEL?.trim() || "claude-opus-5-5") : null;

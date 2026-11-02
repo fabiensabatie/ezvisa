@@ -10,6 +10,13 @@ export type FormPreparerDeps = {
   db: Db;
   storage: Storage | null;
   ai: FormAi | null;
+  /**
+   * Whether a case fill also has Claude read the client's documents and fill the rest, on the
+   * agency's API key. Off (the default), the background fill copies the records only and the
+   * rest is filled over MCP by the assistant the team works with (prepare_case_forms). Setting
+   * template PDFs up still uses Claude.
+   */
+  fillWithClaude?: boolean;
   now?: () => Date;
 };
 
@@ -138,7 +145,9 @@ export class FormPreparer implements FormJobs {
     const kase = await this.deps.db.case.findUnique({ where: { id: caseId } });
     if (!kase || kase.stage === "DONE" || kase.stage === "CANCELLED") return;
     const ctx = await this.context();
-    if (ctx) await prepareCaseForms(ctx, { case: caseId });
+    if (ctx) {
+      await prepareCaseForms(ctx, { case: caseId }, { claude: this.deps.fillWithClaude ?? false });
+    }
   }
 
   private async setUp(fileId: string) {
